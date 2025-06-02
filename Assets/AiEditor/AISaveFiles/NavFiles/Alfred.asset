@@ -14,21 +14,69 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   branchType: 2
   nodes:
-  - nodeId: 9a60ab52-c3b2-4e15-9167-f81aa460bcdb
+  - nodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
     nodeType: MiddleNode(Clone)
-    nodeLabel: If Rifle
-    position: {x: -1735.6616, y: -160}
-  - nodeId: b364ee5f-7556-4ddd-a830-a2453d3e9adc
+    nodeLabel: If Enemy
+    position: {x: -2288, y: -16}
+  - nodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    nodeType: MiddleNode(Clone)
+    nodeLabel: If Visible
+    position: {x: -2016, y: -16}
+  - nodeId: 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    nodeType: EndNode(Clone)
+    nodeLabel: Chase
+    position: {x: -1776, y: -16}
+  - nodeId: 07414bc0-df5a-4d24-982e-8482af110e3e
     nodeType: EndNode(Clone)
     nodeLabel: Wander
-    position: {x: -1269.194, y: -94.72635}
+    position: {x: -2288, y: -64}
   connections:
   - fromNodeId: StartNavButton
     fromPortId: NavOrigin
-    toNodeId: 9a60ab52-c3b2-4e15-9167-f81aa460bcdb
+    toNodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
     toPortId: Input
-  - fromNodeId: 9a60ab52-c3b2-4e15-9167-f81aa460bcdb
+  - fromNodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
     fromPortId: Output
-    toNodeId: b364ee5f-7556-4ddd-a830-a2453d3e9adc
+    toNodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    toPortId: Input
+  - fromNodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    fromPortId: Output
+    toNodeId: 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    toPortId: Input
+  - fromNodeId: StartNavButton
+    fromPortId: NavOrigin
+    toNodeId: 07414bc0-df5a-4d24-982e-8482af110e3e
     toPortId: Input
   treeName: Alfred
+  executableNodes:
+  - nodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
+    methodName: IfEnemy
+    originalLabel: If Enemy
+    nodeType: 1
+    numericValue: 0
+    connectedNodeIds:
+    - f43793d6-4ca5-403c-9f2b-292d819ad56a
+    position: {x: -2288, y: -16}
+  - nodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    methodName: IfVisible
+    originalLabel: If Visible
+    nodeType: 1
+    numericValue: 0
+    connectedNodeIds:
+    - 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    position: {x: -2016, y: -16}
+  - nodeId: 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    methodName: Chase
+    originalLabel: Chase
+    nodeType: 2
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -1776, y: -16}
+  - nodeId: 07414bc0-df5a-4d24-982e-8482af110e3e
+    methodName: Wander
+    originalLabel: Wander
+    nodeType: 2
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -2288, y: -64}
+  startNodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede

@@ -1,10 +1,10 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using System.Collections;
 
 // Attach this to any permanent UI line to allow click-to-delete
 public class UILineClickDeleter : MonoBehaviour, IPointerClickHandler
-{
-    public void OnPointerClick(PointerEventData eventData)
+{    public void OnPointerClick(PointerEventData eventData)
     {
         Destroy(gameObject);
     }
