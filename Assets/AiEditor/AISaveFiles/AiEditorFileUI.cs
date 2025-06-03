@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.IO;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using AiEditor;
@@ -188,10 +189,13 @@ public class AiEditorFileUI : MonoBehaviour
                             toNodeId = toNode.nodeId,
                             toPortId = toPortId
                         });
-                    }
-                }
+                    }                }
                 asset.nodes = nodeList;
                 asset.connections = connectionList;
+                
+                // Generate execution data
+                GenerateExecutionData(asset, nodeList, connectionList);
+                
                 UnityEditor.EditorUtility.SetDirty(asset);
                 // If the name has changed, rename the asset file
                 string newFileName = assetName + ".asset";
@@ -252,9 +256,12 @@ public class AiEditorFileUI : MonoBehaviour
                         toPortId = "InputPort"
                     });
                 }
-            }
-            asset.nodes = nodeList;
+            }            asset.nodes = nodeList;
             asset.connections = connectionList;
+            
+            // Generate execution data
+            GenerateExecutionData(asset, nodeList, connectionList);
+            
             string path = Path.Combine("Assets", "AiEditor", "AISaveFiles", folder, assetName + ".asset");
             UnityEditor.AssetDatabase.CreateAsset(asset, path);
             UnityEditor.AssetDatabase.SaveAssets();
@@ -307,17 +314,17 @@ public class AiEditorFileUI : MonoBehaviour
         // Set FileName field if present (ALWAYS, regardless of node loop)
         if (FileName != null)
         {
-            FileName.text = asset.treeName;
-            Debug.Log($"[AiEditorFileUI] (OnFileSelected) Set FileName.text to loaded treeName: {asset.treeName}");
+            FileName.text = asset.treeName;            Debug.Log($"[AiEditorFileUI] (OnFileSelected) Set FileName.text to loaded treeName: {asset.treeName}");
         }
+        
         // Clear existing nodes and lines from the Content panel, except StartNodePanel
         var content = GameObject.Find("Content");
-        var startNodePanel = GameObject.Find("StartNodePanel");
+        var startPanel = GameObject.Find("StartNodePanel");
         // Explicitly destroy all node and line prefabs before loading
         var toDestroy = new List<GameObject>();
         foreach (Transform child in content.transform)
         {
-            if (child.gameObject == startNodePanel) continue;
+            if (child.gameObject == startPanel) continue;
             string n = child.gameObject.name;
             if (n == "UILine(Clone)" || n == "MiddleNode(Clone)" || n == "SubAINode(Clone)" || n == "EndNode(Clone)")
                 toDestroy.Add(child.gameObject);
@@ -325,18 +332,59 @@ public class AiEditorFileUI : MonoBehaviour
         foreach (var go in toDestroy)
             DestroyImmediate(go);
 
+        // --- Always run branch label/button hiding logic FIRST ---
+        if (asset.branchType == AiEditor.AiBranchType.Nav)
+        {
+            var turretLabel = GameObject.Find("TurretLabel");
+            if (turretLabel != null) turretLabel.SetActive(false);
+            
+            var navLabel = GameObject.Find("NavLabel");
+            if (navLabel != null) navLabel.SetActive(true);
+            
+            // Find buttons under StartNodePanel (consistent with connection code)
+            if (startPanel != null)
+            {
+                var turretBtn = startPanel.transform.Find("StartTurretButton");
+                if (turretBtn != null) turretBtn.gameObject.SetActive(false);
+                
+                var navBtn = startPanel.transform.Find("StartNavButton");
+                if (navBtn != null) navBtn.gameObject.SetActive(true);
+                
+                Debug.Log("[AiEditorFileUI] Nav file loaded - activated StartNavButton, deactivated StartTurretButton");
+            }
+        }
+        else if (asset.branchType == AiEditor.AiBranchType.Turret)
+        {
+            var navLabel = GameObject.Find("NavLabel");
+            if (navLabel != null) navLabel.SetActive(false);
+            
+            var turretLabel = GameObject.Find("TurretLabel");
+            if (turretLabel != null) turretLabel.SetActive(true);
+            
+            // Find buttons under StartNodePanel (consistent with connection code)
+            if (startPanel != null)
+            {
+                var navBtn = startPanel.transform.Find("StartNavButton");
+                if (navBtn != null) navBtn.gameObject.SetActive(false);
+                
+                var turretBtn = startPanel.transform.Find("StartTurretButton");
+                if (turretBtn != null) turretBtn.gameObject.SetActive(true);
+                
+                Debug.Log("[AiEditorFileUI] Turret file loaded - activated StartTurretButton, deactivated StartNavButton");
+            }
+        }
+
         // --- NodeId-based mapping ---
         var nodeIdToGameObject = new Dictionary<string, GameObject>();
         // --- Handle StartNodePanel and all nodes ---
         foreach (var nodeData in asset.nodes)
         {
             Debug.Log($"Loading node: type={nodeData.nodeType}, label={nodeData.nodeLabel}, nodeId={nodeData.nodeId}");
-            GameObject nodeGO = null;
-            if ((nodeData.nodeType == "Start" || nodeData.nodeLabel == asset.treeName) && startNodePanel != null)
+            GameObject nodeGO = null;            if ((nodeData.nodeType == "Start" || nodeData.nodeLabel == asset.treeName) && startPanel != null)
             {
                 // Update StartNodePanel label and position
                 // Set FileNameText to asset.treeName
-                var fileNameTextObj = startNodePanel.transform.Find("FileNameText");
+                var fileNameTextObj = startPanel.transform.Find("FileNameText");
                 if (fileNameTextObj != null)
                 {
                     var tmp = fileNameTextObj.GetComponent<TMPro.TMP_Text>();
@@ -346,23 +394,22 @@ public class AiEditorFileUI : MonoBehaviour
                         Debug.Log($"[AiEditorFileUI] Set FileNameText to loaded treeName: {asset.treeName}");
                     }
                 }
-                var rect = startNodePanel.GetComponent<RectTransform>();
+                var rect = startPanel.GetComponent<RectTransform>();
                 rect.anchoredPosition = nodeData.position;
-                var title = startNodePanel.GetComponentInChildren<TitleName>();
+                var title = startPanel.GetComponentInChildren<TitleName>();
                 if (title != null)
-                    title.SetTitle(nodeData.nodeLabel);
-                // Set nodeId if possible
-                var nd = startNodePanel.GetComponent<NodeDraggable>();
+                    title.SetTitle(nodeData.nodeLabel);                // Set nodeId if possible
+                var nd = startPanel.GetComponent<NodeDraggable>();
                 if (nd != null) nd.nodeId = nodeData.nodeId;
                 // Set TMP_Text child named "Text" to node label
-                var textChild = startNodePanel.transform.Find("Text");
+                var textChild = startPanel.transform.Find("Text");
                 if (textChild != null)
                 {
                     var tmp = textChild.GetComponent<TMPro.TMP_Text>();
                     if (tmp != null)
                         tmp.text = nodeData.nodeLabel;
                 }
-                nodeGO = startNodePanel;
+                nodeGO = startPanel;
             }
             else
             {
@@ -402,45 +449,50 @@ public class AiEditorFileUI : MonoBehaviour
                 {
                     var tmp = textChild.GetComponent<TMPro.TMP_Text>();
                     if (tmp != null)
-                        tmp.text = nodeData.nodeLabel;
+                        tmp.text = nodeData.nodeLabel;                }
+            }
+              // Setup NumberInputButton if the label contains # and we have execution data
+            if (nodeData.nodeLabel.Contains("#") && nodeGO != null)
+            {
+                var numberInputButton = nodeGO.transform.Find("NumberInputButton");
+                if (numberInputButton != null)
+                {
+                    numberInputButton.gameObject.SetActive(true);
+                    var inlineNumberInput = numberInputButton.GetComponent<InlineNumberInput>();
+                    if (inlineNumberInput != null)
+                    {
+                        // Set template first
+                        inlineNumberInput.SetTemplate(nodeData.nodeLabel);
+                          // Find the corresponding executable node and set the numeric value
+                        var executableNode = asset.executableNodes.Find(n => n.nodeId == nodeData.nodeId);
+                        if (executableNode != null)
+                        {
+                            // Always set the value from the save file, even if it's 0
+                            string valueToSet = executableNode.numericValue.ToString();
+                            inlineNumberInput.SetCurrentNumber(valueToSet);
+                            Debug.Log($"[AiEditorFileUI] Loaded number {executableNode.numericValue} for node {nodeData.nodeLabel}");
+                            
+                            // Ensure the value sticks by setting it again after a frame delay
+                            StartCoroutine(VerifyNumberDisplayAfterDelay(inlineNumberInput, valueToSet, nodeData.nodeLabel));
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[AiEditorFileUI] No executable node found for {nodeData.nodeId}");
+                        }
+                    }
                 }
             }
+            
             // Register in map
             if (!string.IsNullOrEmpty(nodeData.nodeId) && nodeGO != null)
-                nodeIdToGameObject[nodeData.nodeId] = nodeGO;
-        }
-        // --- Always run branch label/button hiding logic ---
-        if (asset.branchType == AiEditor.AiBranchType.Nav)
-        {
-            var turretLabel = GameObject.Find("TurretLabel");
-            var turretButton = GameObject.Find("StartTurretButton");
-            if (turretLabel != null) turretLabel.SetActive(false);
-            if (turretButton != null) turretButton.SetActive(false);
-            var navLabel = GameObject.Find("NavLabel");
-            var navButton = GameObject.Find("StartNavButton");
-            if (navLabel != null) navLabel.SetActive(true);
-            if (navButton != null) navButton.SetActive(true);
-        }
-        else if (asset.branchType == AiEditor.AiBranchType.Turret)
-        {
-            var navLabel = GameObject.Find("NavLabel");
-            var navButton = GameObject.Find("StartNavButton");
-            if (navLabel != null) navLabel.SetActive(false);
-            if (navButton != null) navButton.SetActive(false);
-            var turretLabel = GameObject.Find("TurretLabel");
-            var turretButton = GameObject.Find("StartTurretButton");
-            if (turretLabel != null) turretLabel.SetActive(true);
-            if (turretButton != null) turretButton.SetActive(true);
-        }
+                nodeIdToGameObject[nodeData.nodeId] = nodeGO;        }
         // --- Recreate connections using nodeId mapping ---
         foreach (var conn in asset.connections)
         {
             // Special handling for StartNavButton/StartTurretButton as origin
             GameObject fromNode = null;
-            Button outputButton = null;
-            if (conn.fromNodeId == "StartNavButton")
+            Button outputButton = null;            if (conn.fromNodeId == "StartNavButton")
             {
-                var startPanel = GameObject.Find("StartNodePanel");
                 if (startPanel != null)
                 {
                     var navBtn = startPanel.transform.Find("StartNavButton");
@@ -448,10 +500,8 @@ public class AiEditorFileUI : MonoBehaviour
                         outputButton = navBtn.GetComponent<Button>();
                 }
                 fromNode = startPanel;
-            }
-            else if (conn.fromNodeId == "StartTurretButton")
+            }else if (conn.fromNodeId == "StartTurretButton")
             {
-                var startPanel = GameObject.Find("StartNodePanel");
                 if (startPanel != null)
                 {
                     var turretBtn = startPanel.transform.Find("StartTurretButton");
@@ -500,12 +550,128 @@ public class AiEditorFileUI : MonoBehaviour
                 lineGO.AddComponent<UILineClickDeleter>();
             // Register with NodeDraggable for drag updates
             var fromDraggable = fromNode != null ? fromNode.GetComponent<NodeDraggable>() : null;
-            var toDraggable = toNode.GetComponent<NodeDraggable>();
-            if (fromDraggable != null) fromDraggable.RegisterConnectedLine(connector);
-            if (toDraggable != null) toDraggable.RegisterConnectedLine(connector);
-        }
+            var toDraggable = toNode.GetComponent<NodeDraggable>();            if (fromDraggable != null) fromDraggable.RegisterConnectedLine(connector);
+            if (toDraggable != null) toDraggable.RegisterConnectedLine(connector);        }
     }
 #endif
         loadPanel.SetActive(false);
+    }
+
+    /// <summary>
+    /// Generates execution data from the visual node graph for AI runtime execution
+    /// </summary>
+    private void GenerateExecutionData(AiEditor.AiTreeAsset asset, List<AiEditor.AiNodeData> nodeList, List<AiEditor.AiConnectionData> connectionList)
+    {
+        asset.executableNodes.Clear();
+        
+        // Find the start node ID (either StartNavButton or StartTurretButton connections)
+        asset.startNodeId = null;
+        foreach (var conn in connectionList)
+        {
+            if (conn.fromNodeId == "StartNavButton" || conn.fromNodeId == "StartTurretButton")
+            {
+                asset.startNodeId = conn.toNodeId;
+                break;
+            }
+        }
+          // Convert each node to executable format
+        foreach (var nodeData in nodeList)
+        {
+            float numericValue = 0f;
+            string methodName = AiEditor.AiMethodConverter.ConvertToMethodName(nodeData.nodeLabel, out numericValue);
+            AiEditor.AiNodeType nodeType = AiEditor.AiMethodConverter.DetermineNodeType(nodeData.nodeLabel);
+            
+            // Check if this node has a NumberInputButton with InlineNumberInput - extract the actual number
+            var nodeGameObject = FindNodeGameObjectById(nodeData.nodeId);
+            if (nodeGameObject != null)
+            {
+                var numberInputButton = nodeGameObject.transform.Find("NumberInputButton");
+                if (numberInputButton != null && numberInputButton.gameObject.activeSelf)
+                {
+                    var inlineNumberInput = numberInputButton.GetComponent<InlineNumberInput>();
+                    if (inlineNumberInput != null)
+                    {
+                        string currentNumberStr = inlineNumberInput.GetCurrentNumber();
+                        if (float.TryParse(currentNumberStr, out float parsedNumber))
+                        {
+                            numericValue = parsedNumber;
+                            Debug.Log($"[AiEditorFileUI] Extracted number {numericValue} from node {nodeData.nodeLabel}");
+                        }
+                    }
+                }
+            }
+            
+            var executableNode = new AiEditor.AiExecutableNode
+            {
+                nodeId = nodeData.nodeId,
+                methodName = methodName,
+                originalLabel = nodeData.nodeLabel,
+                nodeType = nodeType,
+                numericValue = numericValue,
+                position = nodeData.position,
+                connectedNodeIds = new List<string>()
+            };
+            
+            // Find all nodes this one connects to
+            foreach (var conn in connectionList)
+            {
+                if (conn.fromNodeId == nodeData.nodeId)
+                {
+                    executableNode.connectedNodeIds.Add(conn.toNodeId);
+                }
+            }
+            
+            // Sort connected nodes by Y-position for priority handling
+            executableNode.connectedNodeIds.Sort((id1, id2) => {
+                var node1 = nodeList.Find(n => n.nodeId == id1);
+                var node2 = nodeList.Find(n => n.nodeId == id2);
+                if (node1 == null || node2 == null) return 0;
+                return node1.position.y.CompareTo(node2.position.y); // Higher Y = higher priority
+            });
+            
+            asset.executableNodes.Add(executableNode);
+        }
+          Debug.Log($"[AiEditorFileUI] Generated execution data: {asset.executableNodes.Count} executable nodes, start: {asset.startNodeId}");
+    }
+    
+    /// <summary>
+    /// Helper method to find a node GameObject by its nodeId
+    /// </summary>
+    private GameObject FindNodeGameObjectById(string nodeId)
+    {
+        var content = GameObject.Find("Content");
+        if (content == null) return null;
+        
+        var nodeDraggables = content.GetComponentsInChildren<NodeDraggable>();
+        foreach (var node in nodeDraggables)
+        {
+            if (node.nodeId == nodeId)
+                return node.gameObject;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Verifies that the number input displays the correct value after a delay
+    /// This ensures the value persists after Unity's initialization
+    /// </summary>
+    private System.Collections.IEnumerator VerifyNumberDisplayAfterDelay(InlineNumberInput input, string expectedValue, string nodeLabel)
+    {
+        yield return new WaitForEndOfFrame();
+        yield return new WaitForEndOfFrame(); // Wait two frames to be sure
+        
+        if (input != null)
+        {
+            string currentValue = input.GetCurrentNumber();
+            if (currentValue != expectedValue)
+            {
+                Debug.LogWarning($"[AiEditorFileUI] Number value mismatch for {nodeLabel}: expected {expectedValue}, got {currentValue}. Re-setting...");
+                input.SetCurrentNumber(expectedValue);
+            }
+            else
+            {
+                Debug.Log($"[AiEditorFileUI] Number display verified for {nodeLabel}: {currentValue}");
+            }
+        }
     }
 }

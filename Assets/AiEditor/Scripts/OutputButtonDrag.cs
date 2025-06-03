@@ -94,15 +94,30 @@ public class OutputButtonDrag : MonoBehaviour, IPointerDownHandler, IPointerUpHa
                 if (turretLabel != null) turretLabel.SetActive(false);
                 branchType = BranchType.Nav;
             }
-        }
-        // --- NEW: If this is StartNavButton or StartTurretButton, set branchType accordingly ---
+        }        // --- NEW: If this is StartNavButton or StartTurretButton, set branchType accordingly ---
         if (gameObject.name == "StartNavButton")
         {
             branchType = BranchType.Nav;
+            Debug.Log($"OutputButtonDrag OnPointerDown: Set branchType to Nav for {gameObject.name}");
+            // Also set it on the NodeDraggable component if present
+            var nodeDraggable = GetComponentInParent<NodeDraggable>();
+            if (nodeDraggable != null)
+            {
+                nodeDraggable.SetBranchType(BranchType.Nav);
+                Debug.Log($"OutputButtonDrag OnPointerDown: Set NodeDraggable branchType to Nav for {gameObject.name}");
+            }
         }
         else if (gameObject.name == "StartTurretButton")
         {
             branchType = BranchType.Turret;
+            Debug.Log($"OutputButtonDrag OnPointerDown: Set branchType to Turret for {gameObject.name}");
+            // Also set it on the NodeDraggable component if present
+            var nodeDraggable = GetComponentInParent<NodeDraggable>();
+            if (nodeDraggable != null)
+            {
+                nodeDraggable.SetBranchType(BranchType.Turret);
+                Debug.Log($"OutputButtonDrag OnPointerDown: Set NodeDraggable branchType to Turret for {gameObject.name}");
+            }
         }
     }
 
@@ -110,33 +125,52 @@ public class OutputButtonDrag : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (!isDragging || currentTempLine == null) return;
         UpdateLine(dragStartPos, ScreenToCanvasLocal(eventData.position));
-    }
-
-    // Helper: Trace back to the origin node to determine branch type
+    }    // Helper: Trace back to the origin node to determine branch type
     private BranchType GetBranchTypeFromNode()
     {
-        // Try to find a UILineConnector where this node's output is connected to the origin
+        // Try to find a UILineConnector where this node's input is connected from another node
         var nodeDraggable = GetComponentInParent<NodeDraggable>();
         if (nodeDraggable == null) return BranchType.None;
+        
+        // First check if this node already has a branchType set
+        if (nodeDraggable.branchType != BranchType.None)
+            return nodeDraggable.branchType;
+        
         // Find all lines in the Content panel
         var content = UICanvas.transform.Find("Background/Content");
         if (content == null) content = UICanvas.transform;
         var lines = content.GetComponentsInChildren<UILineConnector>();
+        
+        // Look for lines that connect TO this node (inputRect points to this node)
         foreach (var line in lines)
         {
-            // If this node is the outputRect, check if the inputRect is StartNavButton or StartTurretButton
-            if (line.outputRect == (RectTransform)transform)
+            // Check if this node is the input (receiving end) of any line
+            var inputButtons = nodeDraggable.GetComponentsInChildren<Button>();
+            foreach (var inputBtn in inputButtons)
             {
-                var inputBtn = line.inputRect != null ? line.inputRect.GetComponent<Button>() : null;
-                if (inputBtn != null)
+                if (inputBtn.CompareTag("InputPort") && line.inputRect == inputBtn.GetComponent<RectTransform>())
                 {
-                    if (inputBtn.gameObject.name == "StartNavButton" || inputBtn.CompareTag("NavOrigin"))
-                        return BranchType.Nav;
-                    if (inputBtn.gameObject.name == "StartTurretButton" || inputBtn.CompareTag("TurretOrigin"))
-                        return BranchType.Turret;
+                    // Found a line connecting TO this node, now check where it comes from
+                    if (line.outputRect != null)
+                    {
+                        var sourceNodeDraggable = line.outputRect.GetComponentInParent<NodeDraggable>();
+                        if (sourceNodeDraggable != null && sourceNodeDraggable.branchType != BranchType.None)
+                            return sourceNodeDraggable.branchType;
+                        
+                        // If source node doesn't have branchType, check if it's a start button
+                        var sourceButton = line.outputRect.GetComponent<Button>();
+                        if (sourceButton != null)
+                        {
+                            if (sourceButton.gameObject.name == "StartNavButton" || sourceButton.CompareTag("NavOrigin"))
+                                return BranchType.Nav;
+                            if (sourceButton.gameObject.name == "StartTurretButton" || sourceButton.CompareTag("TurretOrigin"))
+                                return BranchType.Turret;
+                        }
+                    }
                 }
             }
         }
+        
         // Fallback: check if this node is directly the StartNavButton or StartTurretButton
         if (gameObject.name == "StartNavButton" || gameObject.CompareTag("NavOrigin"))
             return BranchType.Nav;
@@ -185,12 +219,36 @@ public class OutputButtonDrag : MonoBehaviour, IPointerDownHandler, IPointerUpHa
                 var connector = permLine.AddComponent<UILineConnector>();
                 connector.outputRect = ((RectTransform)transform); // Output button
                 connector.inputRect = inputButton.GetComponent<RectTransform>();
-                connector.canvas = UICanvas;
-                // Register this line with both nodes for drag updates
+                connector.canvas = UICanvas;                // Register this line with both nodes for drag updates
                 NodeDraggable outputDraggable = GetComponentInParent<NodeDraggable>();
                 NodeDraggable inputDraggable = inputButton.GetComponentInParent<NodeDraggable>();
                 if (outputDraggable != null) outputDraggable.RegisterConnectedLine(connector);
-                if (inputDraggable != null) inputDraggable.RegisterConnectedLine(connector);
+                if (inputDraggable != null) inputDraggable.RegisterConnectedLine(connector);                // Propagate branch type from output node to input node
+                if (outputDraggable != null && inputDraggable != null)
+                {
+                    if (outputDraggable.branchType != BranchType.None)
+                        inputDraggable.SetBranchType(outputDraggable.branchType);
+                    else
+                    {
+                        // If output node doesn't have branch type, try to determine it
+                        BranchType determinedType = GetBranchTypeFromNode();
+                        if (determinedType != BranchType.None)
+                        {
+                            outputDraggable.SetBranchType(determinedType);
+                            inputDraggable.SetBranchType(determinedType);
+                        }
+                    }
+                }
+                
+                // Propagate target flags when connection is made
+                var outputTargetHandler = outputDraggable?.GetComponent<TargetDebugHandler>();
+                var inputTargetHandler = inputDraggable?.GetComponent<TargetDebugHandler>();
+                
+                if (outputTargetHandler != null && inputTargetHandler != null)
+                {
+                    outputTargetHandler.OnConnectionChanged();
+                    inputTargetHandler.OnConnectionChanged();
+                }
             }
             // Destroy temp line
             if (currentTempLine != null)
@@ -215,16 +273,26 @@ public class OutputButtonDrag : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             Transform parentTransform = contentRect.transform;
             currentMenu = Instantiate(ContextMenuUIPrefab, parentTransform);
             var menuRect = currentMenu.GetComponent<RectTransform>();
-            menuRect.anchoredPosition = spawnPos;
-            // Assign the canvas reference at runtime
+            menuRect.anchoredPosition = spawnPos;            // Assign the canvas reference at runtime
             var menuScript = currentMenu.GetComponent<ContextMenuUI>();
             if (menuScript != null)
             {
-                menuScript.UICanvasObj = UICanvas;
-                // Use branchType from the node you are dragging from, if available
+                menuScript.UICanvasObj = UICanvas;                // Use branchType from the node you are dragging from, if available
                 var nodeDraggable = GetComponentInParent<NodeDraggable>();
-                if (nodeDraggable != null)
+                Debug.Log($"OutputButtonDrag OnPointerUp: Current branchType before check: {branchType} for {gameObject.name}");
+                if (nodeDraggable != null && nodeDraggable.branchType != BranchType.None)
+                {
                     branchType = nodeDraggable.branchType;
+                    Debug.Log($"OutputButtonDrag OnPointerUp: Using NodeDraggable branchType: {branchType}");
+                }
+                else if (branchType == BranchType.None)
+                {
+                    // Only try to determine it by tracing back if we don't already have it set
+                    branchType = GetBranchTypeFromNode();
+                    Debug.Log($"OutputButtonDrag OnPointerUp: Traced branchType: {branchType}");
+                }
+                
+                Debug.Log($"OutputButtonDrag: Setting context menu branch type to {branchType} from gameObject {gameObject.name}");
                 menuScript.SetOutputButtonInfo(dragStartPos, this, (ContextMenuUI.BranchType)(int)branchType); // Pass branchType so context menu disables correct button
             }
         }

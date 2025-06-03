@@ -26,6 +26,37 @@ public class NodeDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
             contentRectTransform = t.GetComponent<RectTransform>();
         else
             Debug.LogError("NodeDraggable: Could not find Content RectTransform in parent hierarchy.");
+        
+        // Initialize branch type based on node name or parent context
+        InitializeBranchType();
+    }
+    
+    private void InitializeBranchType()
+    {
+        // If branchType is already set, don't override it
+        if (branchType != OutputButtonDrag.BranchType.None)
+            return;
+            
+        // Check if this is a start node
+        if (gameObject.name.Contains("StartNav") || CompareTag("NavOrigin"))
+        {
+            branchType = OutputButtonDrag.BranchType.Nav;
+        }
+        else if (gameObject.name.Contains("StartTurret") || CompareTag("TurretOrigin"))
+        {
+            branchType = OutputButtonDrag.BranchType.Turret;
+        }
+    }
+    
+    // Method to set branch type and propagate to OutputButtonDrag component
+    public void SetBranchType(OutputButtonDrag.BranchType newBranchType)
+    {
+        branchType = newBranchType;
+        
+        // Also set it on any OutputButtonDrag component
+        var outputButtonDrag = GetComponent<OutputButtonDrag>();
+        if (outputButtonDrag != null)
+            outputButtonDrag.branchType = newBranchType;
     }
 
     public void RegisterConnectedLine(UILineConnector line)

@@ -53,14 +53,13 @@ public class ContextMenuUI : MonoBehaviour
 
     // Add this field to track which branch is being built
     public enum BranchType { None, Turret, Nav }
-    public BranchType currentBranch = BranchType.None;
-
-    // Call this from OutputButtonDrag after instantiating ContextMenuUI
+    public BranchType currentBranch = BranchType.None;    // Call this from OutputButtonDrag after instantiating ContextMenuUI
     public void SetOutputButtonInfo(Vector2 pos, OutputButtonDrag dragRef, BranchType branch = BranchType.None)
     {
         outputButtonPos = pos;
         outputButtonDragRef = dragRef;
         currentBranch = branch;
+        Debug.Log($"ContextMenuUI: Received branch type {branch}");
     }
 
     void Start()
@@ -89,9 +88,8 @@ public class ContextMenuUI : MonoBehaviour
         conditionHPButton.onClick.AddListener(OnConditionHPClicked);
         conditionRangeButton.onClick.AddListener(OnConditionRangeClicked);
         conditionTagButton.onClick.AddListener(OnConditionTagClicked);
-        conditionTargetButton.onClick.AddListener(OnConditionTargetClicked);
-
-        // --- Fix: Hide both the button and its label/text for the unused branch ---
+        conditionTargetButton.onClick.AddListener(OnConditionTargetClicked);        // --- Fix: Hide both the button and its label/text for the unused branch ---
+        Debug.Log($"ContextMenuUI Start: currentBranch = {currentBranch}");
         if (currentBranch == BranchType.Turret)
         {
             if (navButton != null) {
@@ -99,6 +97,7 @@ public class ContextMenuUI : MonoBehaviour
                 var colors = navButton.colors;
                 colors.normalColor = colors.disabledColor;
                 navButton.colors = colors;
+                Debug.Log("ContextMenuUI: Disabled nav button for Turret branch");
             }
         }
         else if (currentBranch == BranchType.Nav)
@@ -108,6 +107,7 @@ public class ContextMenuUI : MonoBehaviour
                 var colors = turretButton.colors;
                 colors.normalColor = colors.disabledColor;
                 turretButton.colors = colors;
+                Debug.Log("ContextMenuUI: Disabled turret button for Nav branch");
             }
         }
 
@@ -216,9 +216,7 @@ public class ContextMenuUI : MonoBehaviour
     {
         HideAllConditionPanels();
         conditionTargetPanel.SetActive(true);
-    }
-
-    // --- ACTION FINAL BUTTON ---
+    }    // --- ACTION FINAL BUTTON ---
     public void OnActionFinalButtonClicked()
     {
         var selected = EventSystem.current.currentSelectedGameObject;
@@ -226,7 +224,7 @@ public class ContextMenuUI : MonoBehaviour
         Button finalButton = selected.GetComponent<Button>();
         if (finalButton == null) return;
         // 1. Instantiate EndNode at a position near the context menu
-        Vector3 spawnWorld = transform.position + new Vector3(200, 0, 0); // Offset to the right
+        Vector3 spawnWorld = transform.position + new Vector3(75, 0, 0); // Offset to the right
         // Use content panel as parent for node instantiation
         Transform nodeParentTransform = UICanvasObj.transform;
         var background = UICanvasObj.transform.Find("Background");
@@ -238,8 +236,7 @@ public class ContextMenuUI : MonoBehaviour
         }
         GameObject endNode = Instantiate(EndNodePrefab, nodeParentTransform);
         RectTransform endNodeRect = endNode.GetComponent<RectTransform>();
-        endNodeRect.position = spawnWorld;
-        // Assign UICanvas to node's OutputButtonDrag if present
+        endNodeRect.position = spawnWorld;        // Assign UICanvas to node's OutputButtonDrag if present
         var nodeScript = endNode.GetComponent<OutputButtonDrag>();
         if (nodeScript != null)
             nodeScript.UICanvas = UICanvasObj;
@@ -247,11 +244,15 @@ public class ContextMenuUI : MonoBehaviour
         var newNodeDraggable = endNode.GetComponent<NodeDraggable>();
         var sourceNodeDraggable = outputButtonDragRef != null ? outputButtonDragRef.GetComponentInParent<NodeDraggable>() : null;
         if (newNodeDraggable != null && sourceNodeDraggable != null)
-            newNodeDraggable.branchType = sourceNodeDraggable.branchType;
+            newNodeDraggable.SetBranchType(sourceNodeDraggable.branchType);
+        else if (newNodeDraggable != null && currentBranch != BranchType.None)
+            newNodeDraggable.SetBranchType((OutputButtonDrag.BranchType)(int)currentBranch);
         // Also set branchType on the OutputButtonDrag of the new node (if present)
         var newNodeOutputButtonDrag = endNode.GetComponent<OutputButtonDrag>();
         if (newNodeOutputButtonDrag != null && sourceNodeDraggable != null)
             newNodeOutputButtonDrag.branchType = sourceNodeDraggable.branchType;
+        else if (newNodeOutputButtonDrag != null && currentBranch != BranchType.None)
+            newNodeOutputButtonDrag.branchType = (OutputButtonDrag.BranchType)(int)currentBranch;
         // 2. Set the text of the EndNode to the button's text (support TMPro)
         string finalText = null;
         Text uiText = finalButton.GetComponentInChildren<Text>();
@@ -259,10 +260,32 @@ public class ContextMenuUI : MonoBehaviour
         else {
             TMP_Text tmpText = finalButton.GetComponentInChildren<TMP_Text>();
             if (tmpText != null) finalText = tmpText.text;
-        }
-        if (finalText == null) { Debug.LogError("Final button has no Text or TMP_Text child"); return; }
+        }        if (finalText == null) { Debug.LogError("Final button has no Text or TMP_Text child"); return; }
+          // Check if text contains # for number input
+        bool hasNumberInput = finalText.Contains("#");
+        
+        // Set node text and handle number input visibility
         foreach (var t in endNode.GetComponentsInChildren<Text>()) t.text = finalText;
         foreach (var t in endNode.GetComponentsInChildren<TMP_Text>()) t.text = finalText;
+        
+        // Show/hide number input button based on # presence and setup InlineNumberInput
+        var numberInputButton = endNode.transform.Find("NumberInputButton");
+        if (numberInputButton != null)
+        {
+            numberInputButton.gameObject.SetActive(hasNumberInput);
+            
+            // Setup InlineNumberInput component if text contains #
+            if (hasNumberInput)
+            {
+                var inlineInput = numberInputButton.GetComponent<InlineNumberInput>();
+                if (inlineInput != null)
+                {
+                    inlineInput.SetTemplate(finalText);
+                }
+            }
+            
+            Debug.Log($"EndNode: Number input button set to {hasNumberInput} for text: {finalText}");
+        }
         // 3. Destroy context menu and temp line
         Destroy(gameObject);
         if (OutputButtonDrag.currentTempLine != null)
@@ -307,8 +330,7 @@ public class ContextMenuUI : MonoBehaviour
         // Add click-to-delete functionality
         var lineDeleter = permLine.AddComponent<UILineClickDeleter>();
         // Add connector for dynamic updating
-        var connector = permLine.AddComponent<UILineConnector>();
-        connector.outputRect = outputButtonDragRef != null ? (RectTransform)outputButtonDragRef.transform : null;
+        var connector = permLine.AddComponent<UILineConnector>();        connector.outputRect = outputButtonDragRef != null ? (RectTransform)outputButtonDragRef.transform : null;
         connector.inputRect = inputButton.GetComponent<RectTransform>();
         connector.canvas = UICanvasObj;
         // Register this line with both nodes for drag updates
@@ -316,9 +338,7 @@ public class ContextMenuUI : MonoBehaviour
         NodeDraggable inputDraggable = inputButton.GetComponentInParent<NodeDraggable>();
         if (outputDraggable != null) outputDraggable.RegisterConnectedLine(connector);
         if (inputDraggable != null) inputDraggable.RegisterConnectedLine(connector);
-    }
-
-    // --- CONDITION FINAL BUTTON ---
+    }    // --- CONDITION FINAL BUTTON ---
     public void OnConditionFinalButtonClicked()
     {
         var selected = EventSystem.current.currentSelectedGameObject;
@@ -326,7 +346,7 @@ public class ContextMenuUI : MonoBehaviour
         Button finalButton = selected.GetComponent<Button>();
         if (finalButton == null) { Debug.LogError("Selected object is not a Button"); return; }
         // 1. Instantiate MiddleNode at a position near the context menu
-        Vector3 spawnWorld = transform.position + new Vector3(200, 0, 0); // Offset to the right
+        Vector3 spawnWorld = transform.position + new Vector3(75, 0, 0); // Offset to the right
         // Use content panel as parent for node instantiation
         Transform nodeParentTransform = UICanvasObj.transform;
         var background = UICanvasObj.transform.Find("Background");
@@ -338,8 +358,7 @@ public class ContextMenuUI : MonoBehaviour
         }
         GameObject middleNode = Instantiate(MiddleNodePrefab, nodeParentTransform);
         RectTransform middleNodeRect = middleNode.GetComponent<RectTransform>();
-        middleNodeRect.position = spawnWorld;
-        // Assign UICanvas to node's OutputButtonDrag if present
+        middleNodeRect.position = spawnWorld;        // Assign UICanvas to node's OutputButtonDrag if present
         var nodeScript = middleNode.GetComponent<OutputButtonDrag>();
         if (nodeScript != null)
             nodeScript.UICanvas = UICanvasObj;
@@ -347,11 +366,15 @@ public class ContextMenuUI : MonoBehaviour
         var newNodeDraggable = middleNode.GetComponent<NodeDraggable>();
         var sourceNodeDraggable = outputButtonDragRef != null ? outputButtonDragRef.GetComponentInParent<NodeDraggable>() : null;
         if (newNodeDraggable != null && sourceNodeDraggable != null)
-            newNodeDraggable.branchType = sourceNodeDraggable.branchType;
+            newNodeDraggable.SetBranchType(sourceNodeDraggable.branchType);
+        else if (newNodeDraggable != null && currentBranch != BranchType.None)
+            newNodeDraggable.SetBranchType((OutputButtonDrag.BranchType)(int)currentBranch);
         // Also set branchType on the OutputButtonDrag of the new node (if present)
         var newNodeOutputButtonDrag = middleNode.GetComponent<OutputButtonDrag>();
         if (newNodeOutputButtonDrag != null && sourceNodeDraggable != null)
             newNodeOutputButtonDrag.branchType = sourceNodeDraggable.branchType;
+        else if (newNodeOutputButtonDrag != null && currentBranch != BranchType.None)
+            newNodeOutputButtonDrag.branchType = (OutputButtonDrag.BranchType)(int)currentBranch;
         // 2. Set the text of the MiddleNode to the button's text (support TMPro)
         string condFinalText = null;
         Text condUiText = finalButton.GetComponentInChildren<Text>();
@@ -359,10 +382,31 @@ public class ContextMenuUI : MonoBehaviour
         else {
             TMP_Text condTmpText = finalButton.GetComponentInChildren<TMP_Text>();
             if (condTmpText != null) condFinalText = condTmpText.text;
-        }
-        if (condFinalText == null) { Debug.LogError("Final button has no Text or TMP_Text child"); return; }
+        }        if (condFinalText == null) { Debug.LogError("Final button has no Text or TMP_Text child"); return; }
+          // Check if text contains # for number input
+        bool hasNumberInput = condFinalText.Contains("#");
+        
+        // Set node text and handle number input visibility
         foreach (var t in middleNode.GetComponentsInChildren<Text>()) t.text = condFinalText;
         foreach (var t in middleNode.GetComponentsInChildren<TMP_Text>()) t.text = condFinalText;
+        
+        // Show/hide number input button based on # presence and setup InlineNumberInput
+        var numberInputButton = middleNode.transform.Find("NumberInputButton");
+        if (numberInputButton != null)
+        {
+            numberInputButton.gameObject.SetActive(hasNumberInput);
+            
+            // Setup InlineNumberInput component if text contains #
+            if (hasNumberInput)
+            {
+                var inlineInput = numberInputButton.GetComponent<InlineNumberInput>();
+                if (inlineInput != null)
+                {
+                    inlineInput.SetTemplate(condFinalText);
+                }
+            }
+            
+            Debug.Log($"MiddleNode: Number input button set to {hasNumberInput} for text: {condFinalText}");        }
         // 3. Destroy context menu and temp line
         Destroy(gameObject);
         if (OutputButtonDrag.currentTempLine != null)
@@ -405,8 +449,7 @@ public class ContextMenuUI : MonoBehaviour
         float angle = Mathf.Atan2(diff.y, diff.x) * Mathf.Rad2Deg;
         permLineRect.localRotation = Quaternion.Euler(0, 0, angle);
         // Add click-to-delete functionality
-        var lineDeleter = permLine.AddComponent<UILineClickDeleter>();
-        // Add connector for dynamic updating
+        var lineDeleter = permLine.AddComponent<UILineClickDeleter>();        // Add connector for dynamic updating
         var connector = permLine.AddComponent<UILineConnector>();
         connector.outputRect = outputButtonDragRef != null ? (RectTransform)outputButtonDragRef.transform : null;
         connector.inputRect = inputButton.GetComponent<RectTransform>();
@@ -462,12 +505,6 @@ public class ContextMenuUI : MonoBehaviour
                     }
                     closed = true;
                 }
-            }
-            yield return null;
-        }
+            }            yield return null;        }
     }
 }
-
-// Remove default assignment in the inspector for UICanvasObj if this is a prefab.
-// Instead, set it at runtime from OutputButtonDrag after instantiating the context menu.
-// (No code change needed here, just a comment for clarity)
