@@ -6,16 +6,62 @@ namespace AiEditor
     public enum AiBranchType { None, Turret, Nav }
 
     [CreateAssetMenu(fileName = "AiTreeAsset", menuName = "AI/Tree Asset", order = 1)]
-    public class AiTreeAsset : ScriptableObject
+    public class AiTreeAsset : ComponentData
     {
+        [Header("AI Tree Configuration")]
         public AiBranchType branchType;
         public List<AiNodeData> nodes = new List<AiNodeData>();
         public List<AiConnectionData> connections = new List<AiConnectionData>();
-        public string treeName;
         
         [Header("Execution Data")]
         public List<AiExecutableNode> executableNodes = new List<AiExecutableNode>();
         public string startNodeId;
+        
+        // Legacy field for compatibility - should be kept in sync with title
+        [SerializeField]
+        private string treeName;
+        
+        /// <summary>
+        /// Gets or sets the tree name, ensuring synchronization with the title property
+        /// </summary>
+        public string TreeName
+        {
+            get { return string.IsNullOrEmpty(title) ? treeName : title; }
+            set 
+            { 
+                title = value;
+                treeName = value;
+            }
+        }
+        
+        /// <summary>
+        /// Initialize the component category and default values
+        /// </summary>
+        private void OnEnable()
+        {
+            // Set category to AITree for unified handling
+            category = ComponentCategory.AITree;
+            
+            // Synchronize title and treeName for legacy compatibility
+            if (!string.IsNullOrEmpty(treeName) && string.IsNullOrEmpty(title))
+            {
+                title = treeName;
+            }
+            else if (!string.IsNullOrEmpty(title) && string.IsNullOrEmpty(treeName))
+            {
+                treeName = title;
+            }
+            
+            // Set default values if not set
+            if (cost == 0) cost = 100;
+            if (weight == 0) weight = 1;
+            
+            // Initialize description if empty
+            if (string.IsNullOrEmpty(description))
+            {
+                description = $"AI behavior tree for {branchType} control";
+            }
+        }
     }
 
     [System.Serializable]

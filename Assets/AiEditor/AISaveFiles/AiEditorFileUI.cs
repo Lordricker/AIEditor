@@ -41,6 +41,7 @@ public class AiEditorFileUI : MonoBehaviour
     {
         saveButton.onClick.AddListener(OnSaveClicked);
         loadButton.onClick.AddListener(ToggleLoadPanel);
+        
         turretBranchButton.onClick.AddListener(() => ShowFilePanel(turretFileScrollView, turretFileContent, turretFolder));
         navBranchButton.onClick.AddListener(() => ShowFilePanel(navFileScrollView, navFileContent, navFolder));
         loadPanel.SetActive(false);
@@ -57,7 +58,7 @@ public class AiEditorFileUI : MonoBehaviour
             turretFileScrollView.SetActive(false);
         }
     }
-
+    
     void OnSaveClicked()
     {
         // Determine branch by which start button is active
@@ -99,7 +100,7 @@ public class AiEditorFileUI : MonoBehaviour
             var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiTreeAsset>(currentAssetPath);
             if (asset != null)
             {
-                asset.treeName = treeName;
+                asset.TreeName = treeName;
                 asset.branchType = (folder == navFolder) ? AiEditor.AiBranchType.Nav : AiEditor.AiBranchType.Turret;
                 // --- Serialize nodes and connections ---
                 var content = GameObject.Find("Content");
@@ -215,7 +216,7 @@ public class AiEditorFileUI : MonoBehaviour
             #if UNITY_EDITOR
             var asset = ScriptableObject.CreateInstance<AiTreeAsset>();
             asset.name = assetName;
-            asset.treeName = treeName;
+            asset.TreeName = treeName;
             asset.branchType = (folder == navFolder) ? AiEditor.AiBranchType.Nav : AiEditor.AiBranchType.Turret;
             // --- Serialize nodes and connections ---
             var content = GameObject.Find("Content");
@@ -314,7 +315,8 @@ public class AiEditorFileUI : MonoBehaviour
         // Set FileName field if present (ALWAYS, regardless of node loop)
         if (FileName != null)
         {
-            FileName.text = asset.treeName;            Debug.Log($"[AiEditorFileUI] (OnFileSelected) Set FileName.text to loaded treeName: {asset.treeName}");
+            FileName.text = asset.TreeName;
+            Debug.Log($"[AiEditorFileUI] (OnFileSelected) Set FileName.text to loaded TreeName: {asset.TreeName}");
         }
         
         // Clear existing nodes and lines from the Content panel, except StartNodePanel
@@ -374,24 +376,33 @@ public class AiEditorFileUI : MonoBehaviour
             }
         }
 
+        // Load nodes and connections
+        LoadNodesFromAsset(asset, content, startPanel);
+        LoadConnectionsFromAsset(asset, content, startPanel);
+        
+        loadPanel.SetActive(false);
+    }
+    
+    void LoadNodesFromAsset(AiTreeAsset asset, GameObject content, GameObject startPanel)
+    {
         // --- NodeId-based mapping ---
         var nodeIdToGameObject = new Dictionary<string, GameObject>();
         // --- Handle StartNodePanel and all nodes ---
         foreach (var nodeData in asset.nodes)
         {
             Debug.Log($"Loading node: type={nodeData.nodeType}, label={nodeData.nodeLabel}, nodeId={nodeData.nodeId}");
-            GameObject nodeGO = null;            if ((nodeData.nodeType == "Start" || nodeData.nodeLabel == asset.treeName) && startPanel != null)
+            GameObject nodeGO = null;            if ((nodeData.nodeType == "Start" || nodeData.nodeLabel == asset.TreeName) && startPanel != null)
             {
                 // Update StartNodePanel label and position
-                // Set FileNameText to asset.treeName
+                // Set FileNameText to asset.TreeName
                 var fileNameTextObj = startPanel.transform.Find("FileNameText");
                 if (fileNameTextObj != null)
                 {
                     var tmp = fileNameTextObj.GetComponent<TMPro.TMP_Text>();
                     if (tmp != null)
                     {
-                        tmp.text = asset.treeName;
-                        Debug.Log($"[AiEditorFileUI] Set FileNameText to loaded treeName: {asset.treeName}");
+                        tmp.text = asset.TreeName;
+                        Debug.Log($"[AiEditorFileUI] Set FileNameText to loaded TreeName: {asset.TreeName}");
                     }
                 }
                 var rect = startPanel.GetComponent<RectTransform>();
@@ -486,12 +497,41 @@ public class AiEditorFileUI : MonoBehaviour
             // Register in map
             if (!string.IsNullOrEmpty(nodeData.nodeId) && nodeGO != null)
                 nodeIdToGameObject[nodeData.nodeId] = nodeGO;        }
+    }
+    
+    void LoadConnectionsFromAsset(AiTreeAsset asset, GameObject content, GameObject startPanel)
+    {
+        // --- Create nodeId mapping for connections ---
+        var nodeIdToGameObject = new Dictionary<string, GameObject>();
+        
+        // Add StartNodePanel to mapping
+        if (startPanel != null)
+        {
+            var startDraggable = startPanel.GetComponent<NodeDraggable>();
+            if (startDraggable != null && !string.IsNullOrEmpty(startDraggable.nodeId))
+            {
+                nodeIdToGameObject[startDraggable.nodeId] = startPanel;
+            }
+        }
+        
+        // Add all other nodes to mapping
+        var nodeDraggables = content.GetComponentsInChildren<NodeDraggable>();
+        foreach (var node in nodeDraggables)
+        {
+            if (!string.IsNullOrEmpty(node.nodeId) && node.gameObject != startPanel)
+            {
+                nodeIdToGameObject[node.nodeId] = node.gameObject;
+            }
+        }
+        
         // --- Recreate connections using nodeId mapping ---
         foreach (var conn in asset.connections)
         {
             // Special handling for StartNavButton/StartTurretButton as origin
             GameObject fromNode = null;
-            Button outputButton = null;            if (conn.fromNodeId == "StartNavButton")
+            Button outputButton = null;            
+            
+            if (conn.fromNodeId == "StartNavButton")
             {
                 if (startPanel != null)
                 {
@@ -500,7 +540,8 @@ public class AiEditorFileUI : MonoBehaviour
                         outputButton = navBtn.GetComponent<Button>();
                 }
                 fromNode = startPanel;
-            }else if (conn.fromNodeId == "StartTurretButton")
+            }
+            else if (conn.fromNodeId == "StartTurretButton")
             {
                 if (startPanel != null)
                 {
@@ -514,12 +555,15 @@ public class AiEditorFileUI : MonoBehaviour
             {
                 fromNode = nodeIdToGameObject[conn.fromNodeId];
             }
+            
             if (string.IsNullOrEmpty(conn.toNodeId) || !nodeIdToGameObject.ContainsKey(conn.toNodeId)) continue;
             var toNode = nodeIdToGameObject[conn.toNodeId];
+            
             // Find input port/button
             Button inputButton = null;
             foreach (var btn in toNode.GetComponentsInChildren<Button>())
                 if (btn.CompareTag("InputPort")) { inputButton = btn; break; }
+            
             // For non-origin, find output port/button
             if (outputButton == null && fromNode != null)
             {
@@ -534,10 +578,13 @@ public class AiEditorFileUI : MonoBehaviour
                         if (btn.CompareTag("OutputPort")) { outputButton = btn; break; }
                 }
             }
+            
             if (outputButton == null || inputButton == null) continue;
+            
             // Instantiate line using UILinePrefab
             var lineGO = Instantiate(UILinePrefab, content.transform);
             var lineRect = lineGO.GetComponent<RectTransform>();
+            
             // Set up UILineConnector
             var connector = lineGO.GetComponent<UILineConnector>();
             if (connector == null) connector = lineGO.AddComponent<UILineConnector>();
@@ -545,13 +592,17 @@ public class AiEditorFileUI : MonoBehaviour
             connector.inputRect = inputButton.GetComponent<RectTransform>();
             connector.canvas = content.GetComponentInParent<Canvas>();
             connector.UpdateLine();
+            
             // Add click-to-delete functionality
             if (lineGO.GetComponent<UILineClickDeleter>() == null)
                 lineGO.AddComponent<UILineClickDeleter>();
+            
             // Register with NodeDraggable for drag updates
             var fromDraggable = fromNode != null ? fromNode.GetComponent<NodeDraggable>() : null;
-            var toDraggable = toNode.GetComponent<NodeDraggable>();            if (fromDraggable != null) fromDraggable.RegisterConnectedLine(connector);
-            if (toDraggable != null) toDraggable.RegisterConnectedLine(connector);        }
+            var toDraggable = toNode.GetComponent<NodeDraggable>();            
+            if (fromDraggable != null) fromDraggable.RegisterConnectedLine(connector);
+            if (toDraggable != null) toDraggable.RegisterConnectedLine(connector);        
+        }
     }
 #endif
         loadPanel.SetActive(false);

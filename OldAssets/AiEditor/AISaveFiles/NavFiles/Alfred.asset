@@ -1,0 +1,82 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 644b83c0a12cafe4b90e46db268763f8, type: 3}
+  m_Name: Alfred
+  m_EditorClassIdentifier: 
+  branchType: 2
+  nodes:
+  - nodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
+    nodeType: MiddleNode(Clone)
+    nodeLabel: If Enemy
+    position: {x: -2288, y: -16}
+  - nodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    nodeType: MiddleNode(Clone)
+    nodeLabel: If Visible
+    position: {x: -2016, y: -16}
+  - nodeId: 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    nodeType: EndNode(Clone)
+    nodeLabel: Chase
+    position: {x: -1776, y: -16}
+  - nodeId: 07414bc0-df5a-4d24-982e-8482af110e3e
+    nodeType: EndNode(Clone)
+    nodeLabel: Wander
+    position: {x: -2288, y: -64}
+  connections:
+  - fromNodeId: StartNavButton
+    fromPortId: NavOrigin
+    toNodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
+    toPortId: Input
+  - fromNodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
+    fromPortId: Output
+    toNodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    toPortId: Input
+  - fromNodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    fromPortId: Output
+    toNodeId: 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    toPortId: Input
+  - fromNodeId: StartNavButton
+    fromPortId: NavOrigin
+    toNodeId: 07414bc0-df5a-4d24-982e-8482af110e3e
+    toPortId: Input
+  treeName: Alfred
+  executableNodes:
+  - nodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
+    methodName: IfEnemy
+    originalLabel: If Enemy
+    nodeType: 1
+    numericValue: 0
+    connectedNodeIds:
+    - f43793d6-4ca5-403c-9f2b-292d819ad56a
+    position: {x: -2288, y: -16}
+  - nodeId: f43793d6-4ca5-403c-9f2b-292d819ad56a
+    methodName: IfVisible
+    originalLabel: If Visible
+    nodeType: 1
+    numericValue: 0
+    connectedNodeIds:
+    - 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    position: {x: -2016, y: -16}
+  - nodeId: 3c58d7f1-b460-480f-8d33-e8c2074fc2b9
+    methodName: Chase
+    originalLabel: Chase
+    nodeType: 2
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -1776, y: -16}
+  - nodeId: 07414bc0-df5a-4d24-982e-8482af110e3e
+    methodName: Wander
+    originalLabel: Wander
+    nodeType: 2
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -2288, y: -64}
+  startNodeId: 5db14b29-4cdd-4ac2-9a0d-11597bc70ede
