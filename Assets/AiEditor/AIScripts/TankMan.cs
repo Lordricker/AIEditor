@@ -26,14 +26,15 @@ public class TankMan : MonoBehaviour
     [SerializeField] private float wanderReachDistance = 3f;
     
     [Header("Tank Components")]
-    [SerializeField] private Rigidbody tankRigidbody;
     [SerializeField] private Transform turretTransform;
     [SerializeField] private Transform firePoint;
+    [SerializeField] private UnityEngine.AI.NavMeshAgent navAgent;
     
     [Header("Sensor Settings")]
-    [SerializeField] private LayerMask enemyLayerMask = 1 << 8; // Layer 8: Enemy
-    [SerializeField] private LayerMask allyLayerMask = 1 << 9;  // Layer 9: Ally
     [SerializeField] private string tankTag = "Tank";
+    
+    // Team-based detection support
+    private TankTeamInfo myTeamInfo;
     
     [Header("Projectile Settings")]
     [SerializeField] private GameObject projectilePrefab;
@@ -71,7 +72,9 @@ public class TankMan : MonoBehaviour
     public AiTreeAsset AssignedNavAI => assignedNavAI;
     public AiTreeAsset AssignedTurretAI => assignedTurretAI;
 
-    // Movement calculations based on weight and engine power
+    [Header("Terrain Following")]
+    private Quaternion desiredRotation = Quaternion.identity;
+    private bool hasValidTerrainRotation = false;
     public float MoveSpeed => Mathf.Max(1f, enginePower - (totalWeight * 0.1f));
     public float TurnSpeed => Mathf.Max(30f, 90f - (totalWeight * 0.5f));
     
@@ -88,6 +91,7 @@ public class TankMan : MonoBehaviour
     // AI execution state
     private AiExecutableNode currentNavNode;
     private AiExecutableNode currentTurretNode;
+    private AiExecutableNode currentActionNode; // Added for parameter access in actions
     private Coroutine navAiCoroutine;
     private Coroutine turretAiCoroutine;
     private Coroutine currentActionCoroutine;
@@ -102,10 +106,22 @@ public class TankMan : MonoBehaviour
     private Vector3 currentWanderTarget;
     private bool isWandering = false;
     private Vector3 wanderOrigin; // Reference point for wander range checking
+    private float wanderStartTime; // Track when we started moving to current wander target
+    private float wanderTimeout = 5f; // Timeout in seconds before picking new wander point
     
     void Start()
     {
-        if (tankRigidbody == null) tankRigidbody = GetComponent<Rigidbody>();
+        if (navAgent == null) navAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+        
+        // Initialize team info - this is critical for enemy detection
+        EnsureTeamInfoExists();
+        
+        // Configure NavMeshAgent for manual rotation control
+        if (navAgent != null)
+        {
+            navAgent.updateRotation = false; // We'll handle rotation manually
+            navAgent.speed = MoveSpeed > 0 ? MoveSpeed : 5f; // Set movement speed
+        }
         
         // Assign the AI components from tankSlotData for display/reference
         assignedNavAI = tankSlotData != null ? tankSlotData.navAI : null;
@@ -116,13 +132,73 @@ public class TankMan : MonoBehaviour
         
         CalculateStats();
         currentHealth = totalHP;
+        
+        // Update NavMeshAgent speed after stats calculation
+        if (navAgent != null)
+        {
+            navAgent.speed = MoveSpeed;
+        }
+        
+        // Start AI after a small delay to ensure NavMeshAgent is ready
+        StartCoroutine(DelayedStartAI());
+    }
+    
+    /// <summary>
+    /// Ensures this tank has TankTeamInfo component for team-based detection
+    /// </summary>
+    void EnsureTeamInfoExists()
+    {
+        myTeamInfo = GetComponent<TankTeamInfo>();
+        if (myTeamInfo == null)
+        {
+            myTeamInfo = gameObject.AddComponent<TankTeamInfo>();
+            Debug.Log($"[TankMan] Added TankTeamInfo component to {gameObject.name}");
+        }
+        
+        // If we have TankSlotData, use its team assignment
+        if (tankSlotData != null)
+        {
+            myTeamInfo.teamId = tankSlotData.teamId;
+            Debug.Log($"[TankMan] Set team ID {tankSlotData.teamId} for {gameObject.name} from TankSlotData");
+        }
+        else
+        {
+            Debug.LogWarning($"[TankMan] {gameObject.name} has no TankSlotData - team ID will be default (0)");
+        }
+    }
+    
+    IEnumerator DelayedStartAI()
+    {
+        // Wait a frame for all components to initialize
+        yield return null;
+        
+        // Try to place NavMeshAgent on NavMesh if it isn't already
+        if (navAgent != null && navAgent.enabled && !navAgent.isOnNavMesh)
+        {
+            navAgent.Warp(transform.position);
+        }
+        
         StartAI();
     }
     
     void FixedUpdate()
     {
-        // Limit tank rotation to prevent flipping while allowing natural tilting
-        LimitTankRotation();
+        // Keep FixedUpdate empty - we'll do terrain alignment in LateUpdate
+    }
+    
+    void LateUpdate()
+    {
+        // LateUpdate runs after all other updates, so NavMeshAgent won't override our rotation
+        AlignToTerrain();
+    }
+    
+    void Update()
+    {
+        // Force apply stored rotation if we have one
+        if (hasValidTerrainRotation)
+        {
+            transform.rotation = desiredRotation;
+        }
     }
     
     #region Tank Parameters System
@@ -173,6 +249,12 @@ public class TankMan : MonoBehaviour
         Debug.Log($"  Move Speed: {MoveSpeed}, Turn Speed: {TurnSpeed}");
         Debug.Log($"  Combat: {damage} dmg, {range}u range, {shotsPerSec} shots/sec");
         Debug.Log($"  Vision: {visionRange}u range, {visionCone}° cone");
+        
+        // Update NavMeshAgent speed if available
+        if (navAgent != null)
+        {
+            navAgent.speed = MoveSpeed;
+        }
     }    /// <summary>
     /// Set the tank slot data reference (called by TankAssembly)
     /// </summary>
@@ -182,6 +264,24 @@ public class TankMan : MonoBehaviour
         assignedNavAI = tankSlotData != null ? tankSlotData.navAI : null;
         assignedTurretAI = tankSlotData != null ? tankSlotData.turretAI : null;
         CalculateStats();
+        
+        // Ensure team info is properly set
+        EnsureTeamInfoExists();
+        
+        // Update NavMeshAgent configuration after stats calculation
+        if (navAgent != null)
+        {
+            navAgent.speed = MoveSpeed;
+            navAgent.updateRotation = false; // Ensure manual rotation control
+        }
+    }
+
+    /// <summary>
+    /// Get the tank slot data reference (used by SimpleTeamManager for team assignment)
+    /// </summary>
+    public TankSlotData GetTankSlotData()
+    {
+        return tankSlotData;
     }
     
     /// <summary>
@@ -352,18 +452,14 @@ public class TankMan : MonoBehaviour
         {
             // Condition passed - follow to first connected node (highest Y-position)
             var nextNode = sortedConnections.FirstOrDefault();
-            Debug.Log($"[TankMan] Condition '{conditionNode.originalLabel}' PASSED, executing: {nextNode?.originalLabel}");
             return nextNode;
         }
         else
         {
-            Debug.Log($"[TankMan] Condition '{conditionNode.originalLabel}' FAILED, backtracking...");
-            
             // Condition failed - check if this node is connected directly from StartNavButton
             bool isTopLevelNode = tree.connections.Any(c => c.fromNodeId == "StartNavButton" && c.toNodeId == conditionNode.nodeId);
             if (isTopLevelNode)
             {
-                Debug.Log($"[TankMan] Failed node '{conditionNode.originalLabel}' is top-level, trying next alternative from StartNavButton");
                 return GetNextAlternativeFromStart(conditionNode, tree);
             }
             
@@ -371,12 +467,10 @@ public class TankMan : MonoBehaviour
             AiExecutableNode parentNode = FindParentNode(conditionNode, tree);
             if (parentNode != null && parentNode != conditionNode)
             {
-                Debug.Log($"[TankMan] Backtracking to parent node: {parentNode.originalLabel}");
                 return GetNextAlternativeFromParent(parentNode, conditionNode, tree);
             }
             
             // No alternatives found - restart from beginning
-            Debug.Log($"[TankMan] No more alternatives, restarting from beginning");
             return GetFirstNodeFromStart(tree);
         }
     }
@@ -451,34 +545,80 @@ public class TankMan : MonoBehaviour
         // Detect enemies and allies in range
         Collider[] detected = Physics.OverlapSphere(transform.position, visionRange);
         
-        Debug.Log($"[TankMan] UpdateSensorData: Found {detected.Length} colliders in range {visionRange}");
-        Debug.Log($"[TankMan] Enemy layer mask: {enemyLayerMask}, Ally layer mask: {allyLayerMask}");
+        // Debug logging every 60 frames to see what we're detecting
+        if (Time.frameCount % 60 == 0)
+        {
+            Debug.Log($"[TankMan] {gameObject.name} (Team {myTeamInfo?.teamId ?? -1}) - Sensor scan found {detected.Length} objects in range {visionRange}u");
+            Debug.Log($"[TankMan] Vision cone: {visionCone}°, Vision range: {visionRange}u");
+        }
         
         foreach (var collider in detected)
         {
             // Skip self detection
             if (collider.gameObject == gameObject) 
             {
-                Debug.Log($"[TankMan] Skipping self detection: {collider.name}");
                 continue;
             }
             
-            int objectLayer = collider.gameObject.layer;
-            bool isEnemy = ((1 << objectLayer) & enemyLayerMask) != 0;
-            bool isAlly = ((1 << objectLayer) & allyLayerMask) != 0;
+            // Only detect objects that have TankTeamInfo (tanks)
+            TankTeamInfo otherTeamInfo = collider.GetComponent<TankTeamInfo>();
+            if (otherTeamInfo == null)
+            {
+                continue; // Skip objects without team info (not tanks)
+            }
             
-            Debug.Log($"[TankMan] Object: {collider.name}, Layer: {objectLayer}, IsEnemy: {isEnemy}, IsAlly: {isAlly}");
+            // Ensure we have our own team info
+            if (myTeamInfo == null)
+            {
+                Debug.LogWarning($"[TankMan] {gameObject.name} has no TankTeamInfo! Cannot determine team relationships.");
+                continue;
+            }
             
-            // Check layer masks
-            if (isEnemy)
+            // Use team-based detection
+            bool isEnemy = myTeamInfo.IsEnemy(otherTeamInfo);
+            bool isAlly = myTeamInfo.IsAlly(otherTeamInfo);
+            
+            // Debug logging for each detected tank
+            if (Time.frameCount % 60 == 0)
+            {
+                Debug.Log($"[TankMan] Detected tank: {collider.gameObject.name} (Team {otherTeamInfo.teamId}) - My team: {myTeamInfo.teamId} - Enemy: {isEnemy}, Ally: {isAlly}");
+            }
+            
+            // Check if object is within vision cone (use turret direction if available)
+            Vector3 visionPosition = turretTransform != null ? turretTransform.position : transform.position;
+            Vector3 visionForward = turretTransform != null ? turretTransform.forward : transform.forward;
+            
+            Vector3 directionToTarget = (collider.transform.position - visionPosition).normalized;
+            float angleToTarget = Vector3.Angle(visionForward, directionToTarget);
+            bool inVisionCone = angleToTarget <= visionCone * 0.5f; // visionCone is full angle, so half for each side
+            
+            // Debug vision cone calculation
+            if (Time.frameCount % 60 == 0 && (isEnemy || isAlly))
+            {
+                Debug.Log($"[TankMan] Vision check for {collider.gameObject.name}: angle={angleToTarget:F1}°, maxAngle={visionCone * 0.5f:F1}°, inCone={inVisionCone}");
+                Debug.Log($"[TankMan] Vision from: {(turretTransform != null ? "turret" : "tank")}, forward: {visionForward}");
+            }
+            
+            // Add to appropriate lists based on team and vision
+            if (isEnemy && inVisionCone)
             {
                 detectedEnemies.Add(collider.gameObject);
-                Debug.Log($"[TankMan] Added enemy: {collider.name}");
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"[TankMan] ✓ Enemy detected in vision cone: {collider.gameObject.name} (Team {otherTeamInfo.teamId}) - angle: {angleToTarget:F1}°");
+                }
             }
-            else if (isAlly)
+            else if (isAlly && inVisionCone)
             {
                 detectedAllies.Add(collider.gameObject);
-                Debug.Log($"[TankMan] Added ally: {collider.name}");
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"[TankMan] ✓ Ally detected in vision cone: {collider.gameObject.name} (Team {otherTeamInfo.teamId})");
+                }
+            }
+            else if (isEnemy && !inVisionCone && Time.frameCount % 60 == 0)
+            {
+                Debug.Log($"[TankMan] ✗ Enemy outside vision cone: {collider.gameObject.name} (Team {otherTeamInfo.teamId}) - angle: {angleToTarget:F1}° > {visionCone * 0.5f:F1}°");
             }
         }
         
@@ -488,14 +628,27 @@ public class TankMan : MonoBehaviour
             currentTarget = detectedEnemies
                 .OrderBy(e => Vector3.Distance(transform.position, e.transform.position))
                 .FirstOrDefault();
-            Debug.Log($"[TankMan] Set currentTarget to closest enemy: {currentTarget.name}");
+                
+            if (Time.frameCount % 60 == 0)
+            {
+                var targetTeamInfo = currentTarget.GetComponent<TankTeamInfo>();
+                Debug.Log($"[TankMan] ✓ Target set to: {currentTarget.name} (Team {targetTeamInfo?.teamId ?? -1}) - distance: {Vector3.Distance(transform.position, currentTarget.transform.position):F1}u");
+            }
         }
         else
         {
-            Debug.Log($"[TankMan] No enemies detected, currentTarget remains null");
+            currentTarget = null;
+            if (Time.frameCount % 120 == 0) // Less frequent logging when no target
+            {
+                Debug.Log($"[TankMan] ✗ No enemies detected in vision range/cone");
+            }
         }
         
-        Debug.Log($"[TankMan] Final sensor data - Enemies: {detectedEnemies.Count}, Allies: {detectedAllies.Count}, CurrentTarget: {(currentTarget != null ? currentTarget.name : "null")}");
+        // Final detection summary
+        if (Time.frameCount % 60 == 0)
+        {
+            Debug.Log($"[TankMan] Detection summary for {gameObject.name} (Team {myTeamInfo?.teamId ?? -1}) - Enemies: {detectedEnemies.Count}, Allies: {detectedAllies.Count}, Target: {currentTarget?.name ?? "none"}");
+        }
     }
     
     #endregion
@@ -507,67 +660,114 @@ public class TankMan : MonoBehaviour
     /// </summary>
     bool ExecuteCondition(AiExecutableNode conditionNode)
     {
+        bool result = false;
+        
         switch (conditionNode.methodName)
         {
             case "IfSelf":
-                return currentTarget == gameObject;
+                result = currentTarget == gameObject;
+                break;
                 
             case "IfEnemy":
                 bool hasTarget = currentTarget != null;
                 bool targetIsEnemy = hasTarget && detectedEnemies.Contains(currentTarget);
-                bool result = hasTarget && targetIsEnemy;
-                Debug.Log($"[TankMan] IfEnemy check - HasTarget: {hasTarget}, TargetIsEnemy: {targetIsEnemy}, Result: {result}");
-                if (hasTarget)
-                    Debug.Log($"[TankMan] CurrentTarget: {currentTarget.name}, DetectedEnemies count: {detectedEnemies.Count}");
-                return result;
+                result = hasTarget && targetIsEnemy;
+                
+                // Enhanced debugging for IfEnemy
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"[TankMan] IfEnemy condition for {gameObject.name} (Team {myTeamInfo?.teamId ?? -1}):");
+                    Debug.Log($"  hasTarget: {hasTarget} (target: {currentTarget?.name ?? "null"})");
+                    Debug.Log($"  targetIsEnemy: {targetIsEnemy} (in detected enemies list)");
+                    Debug.Log($"  detected enemies: {detectedEnemies.Count} [{string.Join(", ", detectedEnemies.Select(e => e.name))}]");
+                    Debug.Log($"  result: {result}");
+                    
+                    if (hasTarget)
+                    {
+                        var targetTeamInfo = currentTarget.GetComponent<TankTeamInfo>();
+                        if (targetTeamInfo != null)
+                        {
+                            Debug.Log($"  target team: {targetTeamInfo.teamId}, my team: {myTeamInfo?.teamId ?? -1}");
+                            Debug.Log($"  IsEnemy check: {myTeamInfo?.IsEnemy(targetTeamInfo) ?? false}");
+                        }
+                        else
+                        {
+                            Debug.Log($"  target has no TankTeamInfo!");
+                        }
+                    }
+                }
+                break;
                 
             case "IfAlly":
-                return currentTarget != null && detectedAllies.Contains(currentTarget);
+                result = currentTarget != null && detectedAllies.Contains(currentTarget);
+                break;
                 
             case "IfAny":
-                return currentTarget != null;
+                result = currentTarget != null;
+                Debug.Log($"[TankMan] IfAny condition - currentTarget: {currentTarget?.name ?? "none"}, result: {result}");
+                break;
                 
             case "IfRifle":
-                return currentTarget != null && 
+                result = currentTarget != null && 
                        Vector3.Distance(transform.position, currentTarget.transform.position) <= range;
+                Debug.Log($"[TankMan] IfRifle condition - hasTarget: {currentTarget != null}, inRange: {result}");
+                break;
                 
             case "IfHP":
                 // Check if current health meets the condition (e.g., "If HP > 50%" -> numericValue = 50)
                 float healthPercent = (currentHealth / totalHP) * 100f;
                 if (conditionNode.originalLabel.Contains(">"))
-                    return healthPercent > conditionNode.numericValue;
+                    result = healthPercent > conditionNode.numericValue;
                 else if (conditionNode.originalLabel.Contains("<"))
-                    return healthPercent < conditionNode.numericValue;
+                    result = healthPercent < conditionNode.numericValue;
                 else
-                    return healthPercent >= conditionNode.numericValue;
+                    result = healthPercent >= conditionNode.numericValue;
+                break;
                 
             case "IfArmor":
                 // Check armor condition
                 if (conditionNode.originalLabel.Contains(">"))
-                    return armor > conditionNode.numericValue;
+                    result = armor > conditionNode.numericValue;
                 else if (conditionNode.originalLabel.Contains("<"))
-                    return armor < conditionNode.numericValue;
+                    result = armor < conditionNode.numericValue;
                 else
-                    return armor >= conditionNode.numericValue;
+                    result = armor >= conditionNode.numericValue;
+                break;
                 
             case "IfRange":
                 // Check if target is within specified range
-                if (currentTarget == null) return false;
-                float distance = Vector3.Distance(transform.position, currentTarget.transform.position);
-                if (conditionNode.originalLabel.Contains(">"))
-                    return distance > conditionNode.numericValue;
-                else if (conditionNode.originalLabel.Contains("<"))
-                    return distance < conditionNode.numericValue;
+                if (currentTarget == null) 
+                {
+                    result = false;
+                }
                 else
-                    return distance <= conditionNode.numericValue;
+                {
+                    float distance = Vector3.Distance(transform.position, currentTarget.transform.position);
+                    if (conditionNode.originalLabel.Contains(">"))
+                        result = distance > conditionNode.numericValue;
+                    else if (conditionNode.originalLabel.Contains("<"))
+                        result = distance < conditionNode.numericValue;
+                    else
+                        result = distance <= conditionNode.numericValue;
+                }
+                break;
                     
             case "IfTag":
-                return currentTarget != null && currentTarget.CompareTag(tankTag);
+                result = currentTarget != null && currentTarget.CompareTag(tankTag);
+                break;
                 
             default:
                 Debug.LogWarning($"[TankMan] Unknown condition: {conditionNode.methodName}");
-                return false;
+                result = false;
+                break;
         }
+        
+        // Log condition results (less frequently to avoid spam)
+        if (Time.frameCount % 60 == 0)
+        {
+            Debug.Log($"[TankMan] Condition {conditionNode.methodName} evaluated to: {result} for {gameObject.name}");
+        }
+        return result;
     }
     
     #endregion
@@ -579,6 +779,12 @@ public class TankMan : MonoBehaviour
     /// </summary>
     void ExecuteAction(AiExecutableNode actionNode)
     {
+        // Debug log every action execution
+        Debug.Log($"[TankMan] Executing action: {actionNode.methodName} (target: {currentTarget?.name ?? "none"})");
+        
+        // Store current action node for parameter access
+        currentActionNode = actionNode;
+        
         // Stop any current action
         if (currentActionCoroutine != null)
         {
@@ -593,43 +799,61 @@ public class TankMan : MonoBehaviour
                 {
                     Fire();
                 }
+                else
+                {
+                    Debug.Log($"[TankMan] Cannot fire - target: {currentTarget?.name ?? "none"}, canFire: {CanFire()}");
+                }
                 break;
                 
             case "Wander":
+                Debug.Log($"[TankMan] Starting wander action");
                 currentActionCoroutine = StartCoroutine(WanderAction());
                 break;
                 
             case "Move":
                 if (currentTarget != null)
                 {
+                    Debug.Log($"[TankMan] Starting move to target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(MoveToTarget());
                 }
                 else
                 {
+                    Debug.Log($"[TankMan] No target for move action, switching to wander");
                     currentActionCoroutine = StartCoroutine(WanderAction());
                 }
                 break;
                 
             case "Stop":
+                Debug.Log($"[TankMan] Stopping movement");
                 StopMovement();
                 break;
                 
             case "Chase":
                 if (currentTarget != null)
                 {
+                    Debug.Log($"[TankMan] Starting chase of target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(ChaseTarget());
+                }
+                else
+                {
+                    Debug.Log($"[TankMan] No target for chase action");
                 }
                 break;
                 
             case "Flee":
                 if (currentTarget != null)
                 {
+                    Debug.Log($"[TankMan] Starting flee from target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(FleeFromTarget());
+                }
+                else
+                {
+                    Debug.Log($"[TankMan] No target for flee action");
                 }
                 break;
                 
-
-                  case "Wait":
+            case "Wait":
+                Debug.Log($"[TankMan] Starting wait action");
                 currentActionCoroutine = StartCoroutine(WaitAction());
                 break;
                 
@@ -637,7 +861,12 @@ public class TankMan : MonoBehaviour
             case "CenterTarget": // Alias for TrackTarget
                 if (currentTarget != null)
                 {
+                    Debug.Log($"[TankMan] Starting track target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(TrackTargetAction());
+                }
+                else
+                {
+                    Debug.Log($"[TankMan] No target for track action");
                 }
                 break;
                 
@@ -652,7 +881,6 @@ public class TankMan : MonoBehaviour
     /// </summary>
     void ExecuteSubAI(AiExecutableNode subAiNode)
     {
-        Debug.Log($"[TankMan] Executing SubAI: {subAiNode.originalLabel}");
         // TODO: Implement SubAI execution by loading and running another AI tree
     }
     
@@ -714,45 +942,91 @@ public class TankMan : MonoBehaviour
     #endregion
     
     #region Movement Actions
+    // All movement actions now properly utilize NavMeshAgent for pathfinding and movement
+    // Actions include: Stop, Wander, Move, Chase, Flee, Wait, TrackTarget
+    // Each action handles NavMeshAgent state checking and boundary clamping
+    
       void StopMovement()
     {
-        if (tankRigidbody != null)
+        if (navAgent != null && navAgent.enabled)
         {
-            // Apply braking force instead of directly stopping
-            tankRigidbody.linearVelocity = Vector3.Lerp(tankRigidbody.linearVelocity, Vector3.zero, 5f * Time.deltaTime);
-            tankRigidbody.angularVelocity = Vector3.Lerp(tankRigidbody.angularVelocity, Vector3.zero, 5f * Time.deltaTime);
+            navAgent.ResetPath(); // Stop NavMesh Agent movement
         }
+        
+        // No need to manually stop rigidbody since we're using NavMeshAgent only
     }
       IEnumerator WanderAction()
     {
+        // Wait for NavMeshAgent to be properly initialized and placed on NavMesh
+        float waitStartTime = Time.time;
+        while (navAgent != null && (!navAgent.enabled || !navAgent.isOnNavMesh))
+        {
+            // Try to warp agent to current position to place it on NavMesh
+            if (navAgent != null && navAgent.enabled)
+            {
+                navAgent.Warp(transform.position);
+            }
+            
+            // Timeout after 2 seconds of waiting
+            if (Time.time - waitStartTime > 2f)
+            {
+                Debug.LogWarning($"[TankMan] NavMeshAgent failed to initialize after 2 seconds. Enabled: {navAgent?.enabled}, OnNavMesh: {navAgent?.isOnNavMesh}");
+                yield break;
+            }
+            
+            yield return new WaitForSeconds(0.1f);
+        }
+        
         // Check if we need to set a new wander target
         if (!isWandering || ShouldPickNewWanderTarget())
         {
             SetNewWanderTarget();
+            wanderStartTime = Time.time; // Reset timeout timer when setting new target
         }
         
-        // Calculate horizontal distance (ignore Y coordinate)
-        Vector3 currentPos = new Vector3(transform.position.x, 0, transform.position.z);
-        Vector3 targetPos = new Vector3(currentWanderTarget.x, 0, currentWanderTarget.z);
-        float horizontalDistance = Vector3.Distance(currentPos, targetPos);
-        
-        Debug.Log($"[TankMan] Wandering to saved point: {currentWanderTarget} (Horizontal Distance: {horizontalDistance:F1}u)");
-        
-        // Move towards the current wander target
-        while (horizontalDistance > wanderReachDistance)
+        // Use NavMesh Agent to move to wander target
+        if (navAgent != null && navAgent.enabled && navAgent.isOnNavMesh)
         {
-            Vector3 direction = (currentWanderTarget - transform.position).normalized;
-            direction.y = 0f; // Keep on horizontal plane
-            MoveInDirection(direction);
+            navAgent.SetDestination(currentWanderTarget);
+        }
+        else
+        {
+            Debug.LogWarning($"[TankMan] NavMeshAgent is not ready for SetDestination. Enabled: {navAgent?.enabled}, OnNavMesh: {navAgent?.isOnNavMesh}");
+            yield break;
+        }
+        
+        // Wait until we reach the target or timeout
+        while (navAgent != null && navAgent.enabled && navAgent.isOnNavMesh)
+        {
+            // Check if path is still pending
+            if (navAgent.pathPending)
+            {
+                yield return null;
+                continue;
+            }
             
-            // Recalculate horizontal distance
-            currentPos = new Vector3(transform.position.x, 0, transform.position.z);
-            horizontalDistance = Vector3.Distance(currentPos, targetPos);
+            // Check if we've reached the destination
+            if (!navAgent.pathPending && navAgent.remainingDistance < wanderReachDistance)
+            {
+                break;
+            }
+            
+            // Check for timeout - if we've been trying to reach this target for too long, pick a new one
+            if (Time.time - wanderStartTime > wanderTimeout)
+            {
+                SetNewWanderTarget();
+                wanderStartTime = Time.time;
+                
+                if (navAgent != null && navAgent.enabled && navAgent.isOnNavMesh)
+                {
+                    navAgent.SetDestination(currentWanderTarget);
+                }
+                continue;
+            }
             
             yield return null;
         }
         
-        Debug.Log($"[TankMan] Reached wander target!");
         // Mark as no longer wandering so a new target will be picked next time
         isWandering = false;
         
@@ -762,46 +1036,145 @@ public class TankMan : MonoBehaviour
     
     IEnumerator MoveToTarget()
     {
+        Debug.Log($"[TankMan] Moving to target: {currentTarget?.name}");
+        
         while (currentTarget != null)
         {
-            Vector3 direction = (currentTarget.transform.position - transform.position).normalized;
-            MoveInDirection(direction);
-            yield return null;
+            // Check if NavMeshAgent is ready
+            if (navAgent == null || !navAgent.enabled || !navAgent.isOnNavMesh)
+            {
+                Debug.LogWarning($"[TankMain] MoveToTarget: NavMeshAgent not ready. Enabled: {navAgent?.enabled}, OnNavMesh: {navAgent?.isOnNavMesh}");
+                yield return new WaitForSeconds(0.1f);
+                continue;
+            }
+            
+            // Get target position and clamp to map boundaries
+            Vector3 targetPosition = currentTarget.transform.position;
+            targetPosition.x = Mathf.Clamp(targetPosition.x, 30f, 770f);
+            targetPosition.z = Mathf.Clamp(targetPosition.z, 30f, 770f);
+            
+            // Set destination to target position
+            navAgent.SetDestination(targetPosition);
+            
+            // Check if we've reached the target (within reasonable distance)
+            float distanceToTarget = Vector3.Distance(transform.position, currentTarget.transform.position);
+            if (distanceToTarget <= 5f) // Close enough - stop moving
+            {
+                Debug.Log($"[TankMan] Reached target ({distanceToTarget:F1}u <= 5u), stopping movement");
+                navAgent.ResetPath();
+                break;
+            }
+            
+            // Update destination periodically for moving targets
+            yield return new WaitForSeconds(0.2f); // Update 5 times per second
         }
+        
+        Debug.Log($"[TankMan] Move to target ended - target lost or reached");
     }
     
     IEnumerator ChaseTarget()
     {
+        Debug.Log($"[TankMan] Starting chase of target: {currentTarget?.name}");
+        
         while (currentTarget != null)
         {
-            Vector3 direction = (currentTarget.transform.position - transform.position).normalized;
-            MoveInDirection(direction);
-            yield return null;
+            // Check if NavMeshAgent is ready
+            if (navAgent == null || !navAgent.enabled || !navAgent.isOnNavMesh)
+            {
+                Debug.LogWarning($"[TankMain] ChaseTarget: NavMeshAgent not ready. Enabled: {navAgent?.enabled}, OnNavMesh: {navAgent?.isOnNavMesh}");
+                yield return new WaitForSeconds(0.1f);
+                continue;
+            }
+            
+            // Get target position and clamp to map boundaries
+            Vector3 targetPosition = currentTarget.transform.position;
+            targetPosition.x = Mathf.Clamp(targetPosition.x, 30f, 770f);
+            targetPosition.z = Mathf.Clamp(targetPosition.z, 30f, 770f);
+            
+            // Set destination directly to target position for more efficient chasing
+            navAgent.SetDestination(targetPosition);
+            
+            // Check if we're close enough to the target (within weapon range)
+            float distanceToTarget = Vector3.Distance(transform.position, currentTarget.transform.position);
+            if (distanceToTarget <= range * 0.8f) // Stop chasing when within 80% of weapon range
+            {
+                Debug.Log($"[TankMan] Close enough to target ({distanceToTarget:F1}u <= {range * 0.8f:F1}u), stopping chase");
+                navAgent.ResetPath(); // Stop moving
+                break;
+            }
+            
+            // Update destination every few frames to account for moving targets
+            yield return new WaitForSeconds(0.2f); // Update 5 times per second
         }
+        
+        Debug.Log($"[TankMan] Chase ended - target lost or close enough");
     }
     
     IEnumerator FleeFromTarget()
     {
+        Debug.Log($"[TankMan] Starting flee from target: {currentTarget?.name}");
+        
         while (currentTarget != null)
         {
-            Vector3 direction = (transform.position - currentTarget.transform.position).normalized;
-            MoveInDirection(direction);
-            yield return null;
+            // Check if NavMeshAgent is ready
+            if (navAgent == null || !navAgent.enabled || !navAgent.isOnNavMesh)
+            {
+                Debug.LogWarning($"[TankMain] FleeFromTarget: NavMeshAgent not ready. Enabled: {navAgent?.enabled}, OnNavMesh: {navAgent?.isOnNavMesh}");
+                yield return new WaitForSeconds(0.1f);
+                continue;
+            }
+            
+            // Calculate flee direction (away from target)
+            Vector3 fleeDirection = (transform.position - currentTarget.transform.position).normalized;
+            
+            // Calculate flee destination - move a good distance away
+            float fleeDistance = Mathf.Max(range * 1.5f, 50f); // Flee at least 1.5x weapon range or 50 units
+            Vector3 fleePosition = transform.position + fleeDirection * fleeDistance;
+            
+            // Clamp to map boundaries
+            fleePosition.x = Mathf.Clamp(fleePosition.x, 30f, 770f);
+            fleePosition.z = Mathf.Clamp(fleePosition.z, 30f, 770f);
+            
+            // Set flee destination
+            navAgent.SetDestination(fleePosition);
+            
+            // Check if we're far enough from the target
+            float distanceToTarget = Vector3.Distance(transform.position, currentTarget.transform.position);
+            if (distanceToTarget >= range * 2f) // Stop fleeing when we're 2x weapon range away
+            {
+                Debug.Log($"[TankMan] Far enough from target ({distanceToTarget:F1}u >= {range * 2f:F1}u), stopping flee");
+                break;
+            }
+            
+            // Update flee destination every few frames
+            yield return new WaitForSeconds(0.3f); // Update ~3 times per second
         }
+        
+        Debug.Log($"[TankMan] Flee ended - target lost or far enough away");
     }
     
     IEnumerator WaitAction()
     {
         Debug.Log($"[TankMan] Waiting in place");
         
-        // Stop all movement
+        // Stop all movement - ensure NavMeshAgent stops properly
         StopMovement();
         
+        // Double-check that movement is actually stopped
+        if (navAgent != null && navAgent.enabled && navAgent.hasPath)
+        {
+            navAgent.ResetPath();
+            Debug.Log($"[TankMan] Force-stopped remaining NavMesh path");
+        }
+        
         // Wait for a specified time (default 2 seconds)
+        // TODO: In the future, this could be made configurable from AI node parameters
         float waitTime = 2f;
+        
+        Debug.Log($"[TankMan] Waiting for {waitTime} seconds...");
         yield return new WaitForSeconds(waitTime);
         
-        Debug.Log($"[TankMan] Finished waiting");
+        Debug.Log($"[TankMan] Finished waiting - ready for next action");
     }
     
     IEnumerator TrackTargetAction()
@@ -836,64 +1209,28 @@ public class TankMan : MonoBehaviour
     }
       void MoveInDirection(Vector3 direction)
     {
-        if (tankRigidbody == null || direction == Vector3.zero) return;
-        
-        // Tank forward is now +Z direction (Unity standard)
-        Vector3 tankForward = transform.forward;
-        
-        // Calculate target rotation (standard Unity LookRotation)
-        Quaternion targetRotation = Quaternion.LookRotation(direction, Vector3.up);
-        
-        // Calculate angle difference between tank's forward direction and target direction
-        float angleDifference = Vector3.Angle(tankForward, direction);
-        
-        // Rotation threshold - only move when reasonably aligned
-        float rotationThreshold = 10f; // degrees
-        
-        // Always rotate towards target
-        transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, TurnSpeed * Time.deltaTime);
-        
-        // Only move forward/backward when sufficiently aligned with target direction
-        if (angleDifference < rotationThreshold)
+        if (navAgent == null || !navAgent.enabled || !navAgent.isOnNavMesh) 
         {
-            // Calculate if target is more forward or backward relative to tank orientation
-            float forwardAlignment = Vector3.Dot(tankForward, direction);
-            
-            // Decide whether to move forward or reverse based on orientation
-            bool shouldReverse = forwardAlignment < -0.1f; // Small threshold for reverse detection
-            
-            Vector3 moveDirection;
-            if (shouldReverse)
-            {
-                // Move backward toward target
-                moveDirection = -tankForward;
-            }
-            else
-            {
-                // Move forward toward target
-                moveDirection = tankForward;
-            }
-            
-            // Apply force in the chosen direction
-            Vector3 force = moveDirection * MoveSpeed * tankRigidbody.mass;
-            tankRigidbody.AddForce(force, ForceMode.Force);
-            
-            // Limit maximum horizontal velocity to prevent unrealistic speeds, but allow natural falling
-            Vector3 horizontalVelocity = new Vector3(tankRigidbody.linearVelocity.x, 0, tankRigidbody.linearVelocity.z);
-            if (horizontalVelocity.magnitude > MoveSpeed)
-            {
-                horizontalVelocity = horizontalVelocity.normalized * MoveSpeed;
-                tankRigidbody.linearVelocity = new Vector3(horizontalVelocity.x, tankRigidbody.linearVelocity.y, horizontalVelocity.z);
-            }
+            Debug.LogWarning($"[TankMan] MoveInDirection called but NavMeshAgent not ready. Enabled: {navAgent?.enabled}, OnNavMesh: {navAgent?.isOnNavMesh}");
+            return;
         }
-        else
+        
+        if (direction == Vector3.zero)
         {
-            // Tank is still rotating - slow down movement to avoid circling
-            Vector3 currentVelocity = tankRigidbody.linearVelocity;
-            currentVelocity.x *= 0.8f;
-            currentVelocity.z *= 0.8f;
-            tankRigidbody.linearVelocity = currentVelocity;
+            // Stop smoothly
+            navAgent.ResetPath();
+            return;
         }
+        
+        // Calculate target position in the given direction
+        Vector3 targetPosition = transform.position + direction.normalized * 10f; // Move 10 units in direction
+        
+        // Clamp target to map boundaries
+        targetPosition.x = Mathf.Clamp(targetPosition.x, 30f, 770f);
+        targetPosition.z = Mathf.Clamp(targetPosition.z, 30f, 770f);
+        
+        // Set NavMesh destination - NavMeshAgent will handle both movement and rotation
+        navAgent.SetDestination(targetPosition);
     }
     
     /// <summary>
@@ -901,8 +1238,6 @@ public class TankMan : MonoBehaviour
     /// </summary>
     void LimitTankRotation()
     {
-        if (tankRigidbody == null) return;
-        
         Vector3 eulerAngles = transform.eulerAngles;
         
         // Convert angles to -180 to 180 range for easier clamping
@@ -920,16 +1255,111 @@ public class TankMan : MonoBehaviour
         // Apply the clamped rotation
         transform.eulerAngles = clampedRotation;
         
-        // If we hit the rotation limits, reduce angular velocity to prevent fighting
-        if (Mathf.Abs(xAngle) >= maxTilt - 1f || Mathf.Abs(zAngle) >= maxTilt - 1f)
-        {
-            Vector3 angularVel = tankRigidbody.angularVelocity;
-            angularVel.x *= 0.5f; // Dampen X rotation when near limit
-            angularVel.z *= 0.5f; // Dampen Z rotation when near limit
-            tankRigidbody.angularVelocity = angularVel;
-        }
+        // Note: No need to dampen angular velocity since rigidbody is kinematic
     }
     
+    /// <summary>
+    /// Align tank to terrain by raycasting to detect ground slope and tilt accordingly
+    /// </summary>
+    void AlignToTerrain()
+    {
+        // Perform raycasts from tank to ground to detect terrain slope
+        float rayDistance = 30f; // Distance to cast rays
+        // Only detect layer 11 (Terrain)
+        LayerMask terrainLayer = 1 << 11; // Only terrain layer
+        
+        // Cast rays from further out to get better slope detection
+        Vector3 frontPoint = transform.position + transform.forward * 4f;
+        Vector3 backPoint = transform.position - transform.forward * 4f;
+        Vector3 leftPoint = transform.position - transform.right * 4f;
+        Vector3 rightPoint = transform.position + transform.right * 4f;
+        
+        // Start rays from well above the tank
+        Vector3 rayStart = Vector3.up * 15f;
+        
+        bool frontHit = Physics.Raycast(frontPoint + rayStart, Vector3.down, out RaycastHit frontHitInfo, rayDistance, terrainLayer);
+        bool backHit = Physics.Raycast(backPoint + rayStart, Vector3.down, out RaycastHit backHitInfo, rayDistance, terrainLayer);
+        bool leftHit = Physics.Raycast(leftPoint + rayStart, Vector3.down, out RaycastHit leftHitInfo, rayDistance, terrainLayer);
+        bool rightHit = Physics.Raycast(rightPoint + rayStart, Vector3.down, out RaycastHit rightHitInfo, rayDistance, terrainLayer);
+        
+        // Visual debugging - draw the rays in Scene view
+        Debug.DrawRay(frontPoint + rayStart, Vector3.down * rayDistance, frontHit ? Color.green : Color.red, 0.1f);
+        Debug.DrawRay(backPoint + rayStart, Vector3.down * rayDistance, backHit ? Color.green : Color.red, 0.1f);
+        Debug.DrawRay(leftPoint + rayStart, Vector3.down * rayDistance, leftHit ? Color.green : Color.red, 0.1f);
+        Debug.DrawRay(rightPoint + rayStart, Vector3.down * rayDistance, rightHit ? Color.green : Color.red, 0.1f);
+        
+        // Debug what we're hitting - only show warnings if terrain detection fails
+        if (Time.frameCount % 120 == 0) // Very infrequent logging
+        {
+            if (!frontHit || !backHit || !leftHit || !rightHit)
+            {
+                Debug.LogWarning($"[TankMan] Not all terrain raycasts hit layer 11 - make sure terrain objects are set to layer 11 (Terrain)");
+            }
+        }
+        
+        if (frontHit && backHit && leftHit && rightHit)
+        {
+            // Calculate pitch (X rotation) from front-back height difference
+            float frontHeight = frontHitInfo.point.y;
+            float backHeight = backHitInfo.point.y;
+            float heightDifference = frontHeight - backHeight;
+            float pitchAngle = Mathf.Atan2(heightDifference, 8f) * Mathf.Rad2Deg; // Using 8f for distance between points
+            
+            // Calculate roll (Z rotation) from left-right height difference
+            float leftHeight = leftHitInfo.point.y;
+            float rightHeight = rightHitInfo.point.y;
+            float sideDifference = rightHeight - leftHeight;
+            float rollAngle = Mathf.Atan2(sideDifference, 8f) * Mathf.Rad2Deg;
+            
+            // Get current Y rotation - since NavAgent updateRotation is false, we need to calculate turning manually
+            float yRotation = transform.eulerAngles.y;
+            
+            // Manual Y-axis rotation towards movement direction if NavMeshAgent is moving
+            if (navAgent != null && navAgent.velocity.magnitude > 0.1f)
+            {
+                Vector3 moveDirection = navAgent.velocity.normalized;
+                float targetYRotation = Mathf.Atan2(moveDirection.x, moveDirection.z) * Mathf.Rad2Deg;
+                yRotation = Mathf.LerpAngle(yRotation, targetYRotation, Time.deltaTime * TurnSpeed * 0.1f);
+            }
+            
+            // Limit pitch and roll to reasonable values for tank movement
+            pitchAngle = Mathf.Clamp(pitchAngle, -30f, 30f);
+            rollAngle = Mathf.Clamp(rollAngle, -30f, 30f);
+            
+            // Store the desired rotation for application in Update
+            desiredRotation = Quaternion.Euler(pitchAngle, yRotation, rollAngle);
+            hasValidTerrainRotation = true;
+            
+            // Debug the calculated angles - show them more frequently to see what's happening
+            if (Time.frameCount % 60 == 0) // Show every 60 frames (less frequent)
+            {
+                Debug.Log($"[TankMan] Height values - Front: {frontHeight:F2}, Back: {backHeight:F2}, Left: {leftHeight:F2}, Right: {rightHeight:F2}");
+                Debug.Log($"[TankMan] Calculated angles - Pitch: {pitchAngle:F2}°, Roll: {rollAngle:F2}°, Yaw: {yRotation:F2}°");
+                Debug.Log($"[TankMan] NavAgent velocity: {navAgent?.velocity} (magnitude: {navAgent?.velocity.magnitude:F2})");
+            }
+        }
+        else
+        {
+            // If we can't detect terrain properly, just handle Y rotation for movement
+            if (navAgent != null && navAgent.velocity.magnitude > 0.1f)
+            {
+                Vector3 moveDirection = navAgent.velocity.normalized;
+                float targetYRotation = Mathf.Atan2(moveDirection.x, moveDirection.z) * Mathf.Rad2Deg;
+                float currentYRotation = transform.eulerAngles.y;
+                float newYRotation = Mathf.LerpAngle(currentYRotation, targetYRotation, Time.deltaTime * TurnSpeed * 0.1f);
+                
+                desiredRotation = Quaternion.Euler(transform.eulerAngles.x, newYRotation, transform.eulerAngles.z);
+                hasValidTerrainRotation = true;
+            }
+            
+            // If we can't detect terrain properly
+            if (Time.frameCount % 300 == 0) // Very infrequent logging
+            {
+                Debug.LogWarning($"[TankMan] Not all terrain raycasts hit layer 11 - make sure terrain objects are set to layer 11 (Terrain)");
+            }
+        }
+    }
+
     /// <summary>
     /// Sets a new wander target within the allowed range
     /// </summary>
@@ -939,9 +1369,50 @@ public class TankMan : MonoBehaviour
         wanderOrigin = transform.position;
         Debug.Log($"[TankMan] Updated wander origin to current position: {wanderOrigin}");
         
-        // Generate random point within wander range from new origin
-        Vector2 randomCircle = Random.insideUnitCircle * wanderRange;
-        Vector3 potentialTarget = wanderOrigin + new Vector3(randomCircle.x, 0, randomCircle.y);
+        // Map boundaries (matching MoveInDirection clamp values)
+        float minBoundary = 30f;
+        float maxBoundary = 770f;
+        
+        Vector3 potentialTarget;
+        int maxAttempts = 10; // Prevent infinite loops
+        int attempts = 0;
+        
+        // Keep generating targets until we find one within map boundaries
+        do
+        {
+            // Generate random point within wander range from new origin
+            Vector2 randomCircle = Random.insideUnitCircle * wanderRange;
+            potentialTarget = wanderOrigin + new Vector3(randomCircle.x, 0, randomCircle.y);
+            
+            // Clamp target to map boundaries
+            potentialTarget.x = Mathf.Clamp(potentialTarget.x, minBoundary, maxBoundary);
+            potentialTarget.z = Mathf.Clamp(potentialTarget.z, minBoundary, maxBoundary);
+            
+            attempts++;
+            
+            // If we've tried many times and still getting clamped targets, 
+            // generate a target closer to center of valid area
+            if (attempts > 5)
+            {
+                // Find center of valid area relative to tank position
+                float centerX = Mathf.Clamp(transform.position.x, minBoundary + 50f, maxBoundary - 50f);
+                float centerZ = Mathf.Clamp(transform.position.z, minBoundary + 50f, maxBoundary - 50f);
+                
+                // Generate target in smaller range around the adjusted center
+                Vector2 smallerCircle = Random.insideUnitCircle * Mathf.Min(wanderRange * 0.5f, 100f);
+                potentialTarget = new Vector3(centerX + smallerCircle.x, wanderOrigin.y, centerZ + smallerCircle.y);
+                
+                // Final boundary clamp
+                potentialTarget.x = Mathf.Clamp(potentialTarget.x, minBoundary, maxBoundary);
+                potentialTarget.z = Mathf.Clamp(potentialTarget.z, minBoundary, maxBoundary);
+                
+                Debug.Log($"[TankMan] Generated boundary-safe wander target after {attempts} attempts");
+                break;
+            }
+            
+        } while ((potentialTarget.x <= minBoundary || potentialTarget.x >= maxBoundary || 
+                  potentialTarget.z <= minBoundary || potentialTarget.z >= maxBoundary) && 
+                 attempts < maxAttempts);
         
         // Check if we should prefer forward or backward movement based on tank orientation
         Vector3 tankForward = transform.forward; // Tank forward is now +Z direction
@@ -953,12 +1424,22 @@ public class TankMan : MonoBehaviour
         // If target is behind us (dot product < 0), consider generating a forward target instead
         if (forwardAlignment < -0.3f) // Allow some tolerance
         {
-            // Generate a new target more in the forward direction
+            // Generate a new target more in the forward direction, but keep it within boundaries
             Vector3 forwardDirection = tankForward + Random.insideUnitCircle.x * 0.5f * Vector3.forward + Random.insideUnitCircle.y * 0.5f * Vector3.back;
             forwardDirection.Normalize();
-            potentialTarget = transform.position + forwardDirection * Random.Range(wanderRange * 0.3f, wanderRange);
+            Vector3 forwardTarget = transform.position + forwardDirection * Random.Range(wanderRange * 0.3f, wanderRange);
             
-            Debug.Log($"[TankMan] Adjusted wander target to favor forward movement");
+            // Clamp forward target to boundaries
+            forwardTarget.x = Mathf.Clamp(forwardTarget.x, minBoundary, maxBoundary);
+            forwardTarget.z = Mathf.Clamp(forwardTarget.z, minBoundary, maxBoundary);
+            
+            // Only use forward target if it's significantly different from original
+            float distanceImprovement = Vector3.Distance(transform.position, forwardTarget) - Vector3.Distance(transform.position, potentialTarget);
+            if (distanceImprovement > 10f) // Only if forward target is meaningfully better
+            {
+                potentialTarget = forwardTarget;
+                Debug.Log($"[TankMan] Adjusted wander target to favor forward movement (within boundaries)");
+            }
         }
         
         currentWanderTarget = potentialTarget;
@@ -969,7 +1450,7 @@ public class TankMan : MonoBehaviour
         Vector3 finalTargetPos = new Vector3(currentWanderTarget.x, 0, currentWanderTarget.z);
         float horizontalDistance = Vector3.Distance(finalOriginPos, finalTargetPos);
         
-        Debug.Log($"[TankMan] New wander target set: {currentWanderTarget} (Distance from new origin: {horizontalDistance:F1}u)");
+        Debug.Log($"[TankMan] New boundary-safe wander target set: {currentWanderTarget} (Distance from origin: {horizontalDistance:F1}u)");
     }
     
     /// <summary>
@@ -986,11 +1467,117 @@ public class TankMan : MonoBehaviour
     
     #region Debug Visualization
     
+    void OnDrawGizmos()
+    {
+        // Always show vision cone in editor for easier debugging
+        if (visionCone > 0 && visionRange > 0)
+        {
+            // Get the position and rotation for vision cone (use turret if available, otherwise tank)
+            Vector3 visionPosition = turretTransform != null ? turretTransform.position : transform.position;
+            Vector3 visionForward = turretTransform != null ? turretTransform.forward : transform.forward;
+            
+            // Draw a simple cone wireframe that's always visible
+            Gizmos.color = new Color(0f, 1f, 0f, 0.2f); // Very light green
+            
+            float halfAngle = visionCone * 0.5f;
+            float baseRadius = Mathf.Tan(halfAngle * Mathf.Deg2Rad) * visionRange;
+            Vector3 baseCenter = visionPosition + visionForward * visionRange;
+            
+            // Draw main direction ray
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawRay(visionPosition, visionForward * visionRange);
+            
+            // Draw cone edges (4 main directions)
+            Gizmos.color = new Color(0f, 1f, 0f, 0.4f);
+            Vector3 right = turretTransform != null ? turretTransform.right : transform.right;
+            Vector3 up = turretTransform != null ? turretTransform.up : transform.up;
+            
+            // Top, bottom, left, right edges of the cone
+            Vector3[] edgeDirections = {
+                Quaternion.AngleAxis(halfAngle, right) * visionForward,
+                Quaternion.AngleAxis(-halfAngle, right) * visionForward,
+                Quaternion.AngleAxis(halfAngle, up) * visionForward,
+                Quaternion.AngleAxis(-halfAngle, up) * visionForward
+            };
+            
+            foreach (var direction in edgeDirections)
+            {
+                Gizmos.DrawRay(visionPosition, direction * visionRange);
+            }
+        }
+    }
+    
     void OnDrawGizmosSelected()
     {
-        // Draw sensor range
+        // Get the position and rotation for vision cone (use turret if available, otherwise tank)
+        Vector3 visionPosition = turretTransform != null ? turretTransform.position : transform.position;
+        Vector3 visionForward = turretTransform != null ? turretTransform.forward : transform.forward;
+        Vector3 visionRight = turretTransform != null ? turretTransform.right : transform.right;
+        
+        // Draw sensor range (full sphere) - always from tank center
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, visionRange);
+        
+        // Draw vision cone from turret position
+        if (visionCone > 0 && visionRange > 0)
+        {
+            Gizmos.color = new Color(0f, 1f, 0f, 0.3f); // Semi-transparent green for better visibility
+            
+            // Calculate cone parameters
+            float halfAngle = visionCone * 0.5f;
+            int segments = 20; // More segments for smoother cone
+            
+            // Draw cone using simpler method
+            Vector3 startPos = visionPosition;
+            
+            // Draw the cone as lines from center to perimeter
+            for (int i = 0; i <= segments; i++)
+            {
+                for (int j = 0; j <= segments; j++)
+                {
+                    float horizontalAngle = (i / (float)segments) * 360f;
+                    float verticalAngle = (j / (float)segments) * halfAngle;
+                    
+                    // Create direction vector for this point on the cone
+                    Vector3 direction = visionForward;
+                    direction = Quaternion.AngleAxis(verticalAngle, visionRight) * direction;
+                    direction = Quaternion.AngleAxis(horizontalAngle, visionForward) * direction;
+                    
+                    Vector3 conePoint = startPos + direction * visionRange;
+                    
+                    // Draw line from center to cone point
+                    if (i % 4 == 0 && j % 4 == 0) // Draw fewer lines to avoid clutter
+                    {
+                        Gizmos.DrawLine(startPos, conePoint);
+                    }
+                }
+            }
+            
+            // Draw cone base circle
+            Gizmos.color = Color.green;
+            float baseRadius = Mathf.Tan(halfAngle * Mathf.Deg2Rad) * visionRange;
+            Vector3 baseCenter = startPos + visionForward * visionRange;
+            
+            // Draw circle at the base of the cone
+            for (int i = 0; i < segments; i++)
+            {
+                float angle1 = (i / (float)segments) * 360f * Mathf.Deg2Rad;
+                float angle2 = ((i + 1) / (float)segments) * 360f * Mathf.Deg2Rad;
+                
+                Vector3 point1 = baseCenter + (Mathf.Cos(angle1) * visionRight + Mathf.Sin(angle1) * Vector3.Cross(visionForward, visionRight)) * baseRadius;
+                Vector3 point2 = baseCenter + (Mathf.Cos(angle2) * visionRight + Mathf.Sin(angle2) * Vector3.Cross(visionForward, visionRight)) * baseRadius;
+                
+                Gizmos.DrawLine(point1, point2);
+            }
+            
+            // Draw main direction indicator (turret forward)
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawRay(startPos, visionForward * visionRange);
+            
+            // Draw vision cone info text position
+            Gizmos.color = Color.white;
+            Gizmos.DrawWireCube(startPos + visionForward * (visionRange * 0.1f), Vector3.one * 0.5f);
+        }
         
         // Draw weapon range
         Gizmos.color = Color.red;
@@ -1001,6 +1588,24 @@ public class TankMan : MonoBehaviour
         {
             Gizmos.color = Color.red;
             Gizmos.DrawLine(transform.position, currentTarget.transform.position);
+            
+            // Draw target info
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawWireCube(currentTarget.transform.position, Vector3.one * 2f);
+        }
+        
+        // Draw detected enemies
+        if (Application.isPlaying && detectedEnemies != null)
+        {
+            Gizmos.color = Color.orange;
+            foreach (var enemy in detectedEnemies)
+            {
+                if (enemy != null)
+                {
+                    Gizmos.DrawWireCube(enemy.transform.position, Vector3.one * 1.5f);
+                    Gizmos.DrawLine(transform.position, enemy.transform.position);
+                }
+            }
         }
         
         // Draw wander system visualization
@@ -1052,7 +1657,7 @@ public class TankMan : MonoBehaviour
             .Select(nodeId => tree.executableNodes.Find(n => n.nodeId == nodeId))
             .Where(n => n != null)
             .OrderByDescending(n => n.position.y)
-            .ToList();        // ...existing code...
+            .ToList();
         return connectedNodes.FirstOrDefault();
     }
 
