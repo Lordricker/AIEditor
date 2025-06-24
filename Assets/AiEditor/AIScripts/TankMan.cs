@@ -152,18 +152,12 @@ public class TankMan : MonoBehaviour
         if (myTeamInfo == null)
         {
             myTeamInfo = gameObject.AddComponent<TankTeamInfo>();
-            Debug.Log($"[TankMan] Added TankTeamInfo component to {gameObject.name}");
         }
         
         // If we have TankSlotData, use its team assignment
         if (tankSlotData != null)
         {
             myTeamInfo.teamId = tankSlotData.teamId;
-            Debug.Log($"[TankMan] Set team ID {tankSlotData.teamId} for {gameObject.name} from TankSlotData");
-        }
-        else
-        {
-            Debug.LogWarning($"[TankMan] {gameObject.name} has no TankSlotData - team ID will be default (0)");
         }
     }
     
@@ -210,7 +204,6 @@ public class TankMan : MonoBehaviour
     {
         if (tankSlotData == null)
         {
-            Debug.LogError($"[TankMan] No TankSlotData assigned to {gameObject.name}");
             return;
         }
         
@@ -223,7 +216,6 @@ public class TankMan : MonoBehaviour
         {
             totalHP += tankSlotData.armorHP;
             armor = tankSlotData.armorHP * 0.25f; // Convert HP to armor value
-            Debug.Log($"[TankMan] Added {tankSlotData.armorHP} HP from armor. Total HP: {totalHP}");
         }
         else
         {
@@ -232,7 +224,6 @@ public class TankMan : MonoBehaviour
         
         // Get engine stats from TankSlotData stat fields
         enginePower = tankSlotData.enginePower > 0 ? tankSlotData.enginePower : 1; // Base engine power
-        Debug.Log($"[TankMan] Engine power: {enginePower}");
         
         // Get turret stats from TankSlotData stat fields
         damage = tankSlotData.turretDamage;
@@ -241,14 +232,6 @@ public class TankMan : MonoBehaviour
         knockback = tankSlotData.turretKnockback;
         visionCone = tankSlotData.turretVisionCone;
         visionRange = tankSlotData.turretVisionRange;
-        
-        Debug.Log($"[TankMan] Turret stats - Damage: {damage}, Range: {range}, Vision: {visionRange}u/{visionCone}°");
-        
-        Debug.Log($"[TankMan] Final stats for {gameObject.name}:");
-        Debug.Log($"  Weight: {totalWeight}, HP: {totalHP}, Engine: {enginePower}");
-        Debug.Log($"  Move Speed: {MoveSpeed}, Turn Speed: {TurnSpeed}");
-        Debug.Log($"  Combat: {damage} dmg, {range}u range, {shotsPerSec} shots/sec");
-        Debug.Log($"  Vision: {visionRange}u range, {visionCone}° cone");
         
         // Update NavMeshAgent speed if available
         if (navAgent != null)
@@ -291,7 +274,6 @@ public class TankMan : MonoBehaviour
     {
         turretTransform = turret;
         firePoint = firePointTransform;
-        Debug.Log($"[TankMan] Turret components set - Turret: {turret?.name}, FirePoint: {firePointTransform?.name}");
     }
     
     #endregion
@@ -301,30 +283,14 @@ public class TankMan : MonoBehaviour
     {
         StopAI();
         
-        Debug.Log($"[TankMan] StartAI called for {gameObject.name}");
-        Debug.Log($"[TankMan] tankSlotData: {(tankSlotData != null ? "present" : "null")}");
-        Debug.Log($"[TankMan] navAI: {(tankSlotData?.navAI != null ? tankSlotData.navAI.name : "null")}");
-        Debug.Log($"[TankMan] turretAI: {(tankSlotData?.turretAI != null ? tankSlotData.turretAI.name : "null")}");
-        Debug.Log($"[TankMan] enableNavAI: {enableNavAI}, enableTurretAI: {enableTurretAI}");
-        
         if (enableNavAI && tankSlotData?.navAI != null)
         {
-            Debug.Log($"[TankMan] Starting NavAI coroutine for {gameObject.name}");
             navAiCoroutine = StartCoroutine(ExecuteNavAI());
-        }
-        else
-        {
-            Debug.Log($"[TankMan] NavAI not started - enableNavAI: {enableNavAI}, navAI present: {tankSlotData?.navAI != null}");
         }
         
         if (enableTurretAI && tankSlotData?.turretAI != null)
         {
-            Debug.Log($"[TankMan] Starting TurretAI coroutine for {gameObject.name}");
             turretAiCoroutine = StartCoroutine(ExecuteTurretAI());
-        }
-        else
-        {
-            Debug.Log($"[TankMan] TurretAI not started - enableTurretAI: {enableTurretAI}, turretAI present: {tankSlotData?.turretAI != null}");
         }
     }
     
@@ -359,7 +325,6 @@ public class TankMan : MonoBehaviour
         var navAiTree = tankSlotData.navAI;
         if (string.IsNullOrEmpty(navAiTree.startNodeId))
         {
-            Debug.LogWarning($"[TankMan] Nav AI tree has no start node: {navAiTree.name}");
             yield break;
         }
 
@@ -385,7 +350,6 @@ public class TankMan : MonoBehaviour
         var turretAiTree = tankSlotData.turretAI;
         if (string.IsNullOrEmpty(turretAiTree.startNodeId))
         {
-            Debug.LogWarning($"[TankMan] Turret AI tree has no start node: {turretAiTree.name}");
             yield break;
         }
 
@@ -545,13 +509,6 @@ public class TankMan : MonoBehaviour
         // Detect enemies and allies in range
         Collider[] detected = Physics.OverlapSphere(transform.position, visionRange);
         
-        // Debug logging every 60 frames to see what we're detecting
-        if (Time.frameCount % 60 == 0)
-        {
-            Debug.Log($"[TankMan] {gameObject.name} (Team {myTeamInfo?.teamId ?? -1}) - Sensor scan found {detected.Length} objects in range {visionRange}u");
-            Debug.Log($"[TankMan] Vision cone: {visionCone}°, Vision range: {visionRange}u");
-        }
-        
         foreach (var collider in detected)
         {
             // Skip self detection
@@ -570,19 +527,12 @@ public class TankMan : MonoBehaviour
             // Ensure we have our own team info
             if (myTeamInfo == null)
             {
-                Debug.LogWarning($"[TankMan] {gameObject.name} has no TankTeamInfo! Cannot determine team relationships.");
                 continue;
             }
             
             // Use team-based detection
             bool isEnemy = myTeamInfo.IsEnemy(otherTeamInfo);
             bool isAlly = myTeamInfo.IsAlly(otherTeamInfo);
-            
-            // Debug logging for each detected tank
-            if (Time.frameCount % 60 == 0)
-            {
-                Debug.Log($"[TankMan] Detected tank: {collider.gameObject.name} (Team {otherTeamInfo.teamId}) - My team: {myTeamInfo.teamId} - Enemy: {isEnemy}, Ally: {isAlly}");
-            }
             
             // Check if object is within vision cone (use turret direction if available)
             Vector3 visionPosition = turretTransform != null ? turretTransform.position : transform.position;
@@ -592,33 +542,14 @@ public class TankMan : MonoBehaviour
             float angleToTarget = Vector3.Angle(visionForward, directionToTarget);
             bool inVisionCone = angleToTarget <= visionCone * 0.5f; // visionCone is full angle, so half for each side
             
-            // Debug vision cone calculation
-            if (Time.frameCount % 60 == 0 && (isEnemy || isAlly))
-            {
-                Debug.Log($"[TankMan] Vision check for {collider.gameObject.name}: angle={angleToTarget:F1}°, maxAngle={visionCone * 0.5f:F1}°, inCone={inVisionCone}");
-                Debug.Log($"[TankMan] Vision from: {(turretTransform != null ? "turret" : "tank")}, forward: {visionForward}");
-            }
-            
             // Add to appropriate lists based on team and vision
             if (isEnemy && inVisionCone)
             {
                 detectedEnemies.Add(collider.gameObject);
-                if (Time.frameCount % 60 == 0)
-                {
-                    Debug.Log($"[TankMan] ✓ Enemy detected in vision cone: {collider.gameObject.name} (Team {otherTeamInfo.teamId}) - angle: {angleToTarget:F1}°");
-                }
             }
             else if (isAlly && inVisionCone)
             {
                 detectedAllies.Add(collider.gameObject);
-                if (Time.frameCount % 60 == 0)
-                {
-                    Debug.Log($"[TankMan] ✓ Ally detected in vision cone: {collider.gameObject.name} (Team {otherTeamInfo.teamId})");
-                }
-            }
-            else if (isEnemy && !inVisionCone && Time.frameCount % 60 == 0)
-            {
-                Debug.Log($"[TankMan] ✗ Enemy outside vision cone: {collider.gameObject.name} (Team {otherTeamInfo.teamId}) - angle: {angleToTarget:F1}° > {visionCone * 0.5f:F1}°");
             }
         }
         
@@ -628,26 +559,10 @@ public class TankMan : MonoBehaviour
             currentTarget = detectedEnemies
                 .OrderBy(e => Vector3.Distance(transform.position, e.transform.position))
                 .FirstOrDefault();
-                
-            if (Time.frameCount % 60 == 0)
-            {
-                var targetTeamInfo = currentTarget.GetComponent<TankTeamInfo>();
-                Debug.Log($"[TankMan] ✓ Target set to: {currentTarget.name} (Team {targetTeamInfo?.teamId ?? -1}) - distance: {Vector3.Distance(transform.position, currentTarget.transform.position):F1}u");
-            }
         }
         else
         {
             currentTarget = null;
-            if (Time.frameCount % 120 == 0) // Less frequent logging when no target
-            {
-                Debug.Log($"[TankMan] ✗ No enemies detected in vision range/cone");
-            }
-        }
-        
-        // Final detection summary
-        if (Time.frameCount % 60 == 0)
-        {
-            Debug.Log($"[TankMan] Detection summary for {gameObject.name} (Team {myTeamInfo?.teamId ?? -1}) - Enemies: {detectedEnemies.Count}, Allies: {detectedAllies.Count}, Target: {currentTarget?.name ?? "none"}");
         }
     }
     
@@ -673,27 +588,12 @@ public class TankMan : MonoBehaviour
                 bool targetIsEnemy = hasTarget && detectedEnemies.Contains(currentTarget);
                 result = hasTarget && targetIsEnemy;
                 
-                // Enhanced debugging for IfEnemy
-                if (Time.frameCount % 60 == 0)
+                if (hasTarget)
                 {
-                    Debug.Log($"[TankMan] IfEnemy condition for {gameObject.name} (Team {myTeamInfo?.teamId ?? -1}):");
-                    Debug.Log($"  hasTarget: {hasTarget} (target: {currentTarget?.name ?? "null"})");
-                    Debug.Log($"  targetIsEnemy: {targetIsEnemy} (in detected enemies list)");
-                    Debug.Log($"  detected enemies: {detectedEnemies.Count} [{string.Join(", ", detectedEnemies.Select(e => e.name))}]");
-                    Debug.Log($"  result: {result}");
-                    
-                    if (hasTarget)
+                    var targetTeamInfo = currentTarget.GetComponent<TankTeamInfo>();
+                    if (targetTeamInfo != null)
                     {
-                        var targetTeamInfo = currentTarget.GetComponent<TankTeamInfo>();
-                        if (targetTeamInfo != null)
-                        {
-                            Debug.Log($"  target team: {targetTeamInfo.teamId}, my team: {myTeamInfo?.teamId ?? -1}");
-                            Debug.Log($"  IsEnemy check: {myTeamInfo?.IsEnemy(targetTeamInfo) ?? false}");
-                        }
-                        else
-                        {
-                            Debug.Log($"  target has no TankTeamInfo!");
-                        }
+                        result = result && myTeamInfo.IsEnemy(targetTeamInfo);
                     }
                 }
                 break;
@@ -704,13 +604,11 @@ public class TankMan : MonoBehaviour
                 
             case "IfAny":
                 result = currentTarget != null;
-                Debug.Log($"[TankMan] IfAny condition - currentTarget: {currentTarget?.name ?? "none"}, result: {result}");
                 break;
                 
             case "IfRifle":
                 result = currentTarget != null && 
                        Vector3.Distance(transform.position, currentTarget.transform.position) <= range;
-                Debug.Log($"[TankMan] IfRifle condition - hasTarget: {currentTarget != null}, inRange: {result}");
                 break;
                 
             case "IfHP":
@@ -757,16 +655,10 @@ public class TankMan : MonoBehaviour
                 break;
                 
             default:
-                Debug.LogWarning($"[TankMan] Unknown condition: {conditionNode.methodName}");
                 result = false;
                 break;
         }
         
-        // Log condition results (less frequently to avoid spam)
-        if (Time.frameCount % 60 == 0)
-        {
-            Debug.Log($"[TankMan] Condition {conditionNode.methodName} evaluated to: {result} for {gameObject.name}");
-        }
         return result;
     }
     
@@ -779,9 +671,6 @@ public class TankMan : MonoBehaviour
     /// </summary>
     void ExecuteAction(AiExecutableNode actionNode)
     {
-        // Debug log every action execution
-        Debug.Log($"[TankMan] Executing action: {actionNode.methodName} (target: {currentTarget?.name ?? "none"})");
-        
         // Store current action node for parameter access
         currentActionNode = actionNode;
         
@@ -799,61 +688,42 @@ public class TankMan : MonoBehaviour
                 {
                     Fire();
                 }
-                else
-                {
-                    Debug.Log($"[TankMan] Cannot fire - target: {currentTarget?.name ?? "none"}, canFire: {CanFire()}");
-                }
                 break;
                 
             case "Wander":
-                Debug.Log($"[TankMan] Starting wander action");
                 currentActionCoroutine = StartCoroutine(WanderAction());
                 break;
                 
             case "Move":
                 if (currentTarget != null)
                 {
-                    Debug.Log($"[TankMan] Starting move to target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(MoveToTarget());
                 }
                 else
                 {
-                    Debug.Log($"[TankMan] No target for move action, switching to wander");
                     currentActionCoroutine = StartCoroutine(WanderAction());
                 }
                 break;
                 
             case "Stop":
-                Debug.Log($"[TankMan] Stopping movement");
                 StopMovement();
                 break;
                 
             case "Chase":
                 if (currentTarget != null)
                 {
-                    Debug.Log($"[TankMan] Starting chase of target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(ChaseTarget());
-                }
-                else
-                {
-                    Debug.Log($"[TankMan] No target for chase action");
                 }
                 break;
                 
             case "Flee":
                 if (currentTarget != null)
                 {
-                    Debug.Log($"[TankMan] Starting flee from target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(FleeFromTarget());
-                }
-                else
-                {
-                    Debug.Log($"[TankMan] No target for flee action");
                 }
                 break;
                 
             case "Wait":
-                Debug.Log($"[TankMan] Starting wait action");
                 currentActionCoroutine = StartCoroutine(WaitAction());
                 break;
                 
@@ -861,17 +731,11 @@ public class TankMan : MonoBehaviour
             case "CenterTarget": // Alias for TrackTarget
                 if (currentTarget != null)
                 {
-                    Debug.Log($"[TankMan] Starting track target: {currentTarget.name}");
                     currentActionCoroutine = StartCoroutine(TrackTargetAction());
-                }
-                else
-                {
-                    Debug.Log($"[TankMan] No target for track action");
                 }
                 break;
                 
             default:
-                Debug.LogWarning($"[TankMan] Unknown action: {actionNode.methodName}");
                 break;
         }
     }
@@ -1288,15 +1152,6 @@ public class TankMan : MonoBehaviour
         Debug.DrawRay(leftPoint + rayStart, Vector3.down * rayDistance, leftHit ? Color.green : Color.red, 0.1f);
         Debug.DrawRay(rightPoint + rayStart, Vector3.down * rayDistance, rightHit ? Color.green : Color.red, 0.1f);
         
-        // Debug what we're hitting - only show warnings if terrain detection fails
-        if (Time.frameCount % 120 == 0) // Very infrequent logging
-        {
-            if (!frontHit || !backHit || !leftHit || !rightHit)
-            {
-                Debug.LogWarning($"[TankMan] Not all terrain raycasts hit layer 11 - make sure terrain objects are set to layer 11 (Terrain)");
-            }
-        }
-        
         if (frontHit && backHit && leftHit && rightHit)
         {
             // Calculate pitch (X rotation) from front-back height difference
@@ -1329,14 +1184,6 @@ public class TankMan : MonoBehaviour
             // Store the desired rotation for application in Update
             desiredRotation = Quaternion.Euler(pitchAngle, yRotation, rollAngle);
             hasValidTerrainRotation = true;
-            
-            // Debug the calculated angles - show them more frequently to see what's happening
-            if (Time.frameCount % 60 == 0) // Show every 60 frames (less frequent)
-            {
-                Debug.Log($"[TankMan] Height values - Front: {frontHeight:F2}, Back: {backHeight:F2}, Left: {leftHeight:F2}, Right: {rightHeight:F2}");
-                Debug.Log($"[TankMan] Calculated angles - Pitch: {pitchAngle:F2}°, Roll: {rollAngle:F2}°, Yaw: {yRotation:F2}°");
-                Debug.Log($"[TankMan] NavAgent velocity: {navAgent?.velocity} (magnitude: {navAgent?.velocity.magnitude:F2})");
-            }
         }
         else
         {
@@ -1351,12 +1198,6 @@ public class TankMan : MonoBehaviour
                 desiredRotation = Quaternion.Euler(transform.eulerAngles.x, newYRotation, transform.eulerAngles.z);
                 hasValidTerrainRotation = true;
             }
-            
-            // If we can't detect terrain properly
-            if (Time.frameCount % 300 == 0) // Very infrequent logging
-            {
-                Debug.LogWarning($"[TankMan] Not all terrain raycasts hit layer 11 - make sure terrain objects are set to layer 11 (Terrain)");
-            }
         }
     }
 
@@ -1367,7 +1208,6 @@ public class TankMan : MonoBehaviour
     {
         // Update wander origin to current tank position for free roaming
         wanderOrigin = transform.position;
-        Debug.Log($"[TankMan] Updated wander origin to current position: {wanderOrigin}");
         
         // Map boundaries (matching MoveInDirection clamp values)
         float minBoundary = 30f;
@@ -1406,7 +1246,6 @@ public class TankMan : MonoBehaviour
                 potentialTarget.x = Mathf.Clamp(potentialTarget.x, minBoundary, maxBoundary);
                 potentialTarget.z = Mathf.Clamp(potentialTarget.z, minBoundary, maxBoundary);
                 
-                Debug.Log($"[TankMan] Generated boundary-safe wander target after {attempts} attempts");
                 break;
             }
             
@@ -1438,19 +1277,11 @@ public class TankMan : MonoBehaviour
             if (distanceImprovement > 10f) // Only if forward target is meaningfully better
             {
                 potentialTarget = forwardTarget;
-                Debug.Log($"[TankMan] Adjusted wander target to favor forward movement (within boundaries)");
             }
         }
         
         currentWanderTarget = potentialTarget;
         isWandering = true;
-        
-        // Calculate horizontal distance from new origin for logging
-        Vector3 finalOriginPos = new Vector3(wanderOrigin.x, 0, wanderOrigin.z);
-        Vector3 finalTargetPos = new Vector3(currentWanderTarget.x, 0, currentWanderTarget.z);
-        float horizontalDistance = Vector3.Distance(finalOriginPos, finalTargetPos);
-        
-        Debug.Log($"[TankMan] New boundary-safe wander target set: {currentWanderTarget} (Distance from origin: {horizontalDistance:F1}u)");
     }
     
     /// <summary>

@@ -12,7 +12,6 @@ public class TankAssembly : MonoBehaviour
     // AI references - only needed for AI components, not stat data
     private AiTreeAsset currentTurretAI;
     private AiTreeAsset currentNavAI;
-    private Rigidbody tankRigidbody;
     private TankMan tankMan;
     
     // Only AI getters needed - component stats are now in TankSlotData
@@ -28,19 +27,44 @@ public class TankAssembly : MonoBehaviour
             return;
         }
         
-        Debug.Log($"TankAssembly.Assemble: Tank data - turretPrefab: {(data.turretPrefab != null ? data.turretPrefab.name : "NULL")}, turretAIInstanceId: '{data.turretAIInstanceId}', isActive: {data.isActive}");          // Ensure a Rigidbody is present on the root tank object
-        tankRigidbody = GetComponent<Rigidbody>();
-        if (tankRigidbody == null)
-        {
-            tankRigidbody = gameObject.AddComponent<Rigidbody>();
-        }        // Configure physics settings
-        tankRigidbody.mass = Mathf.Max(50f, data.totalWeight * 10f); // Convert weight to reasonable mass
-        tankRigidbody.linearDamping = 0.05f; // Almost no air resistance for natural falling
-        tankRigidbody.angularDamping = 1f; // Minimal rotational resistance
-        tankRigidbody.useGravity = true; // Ensure gravity is enabled
-        // No rotation constraints - we'll handle rotation limits in TankMan to allow natural tilting
+        Debug.Log($"TankAssembly.Assemble: Tank data - turretPrefab: {(data.turretPrefab != null ? data.turretPrefab.name : "NULL")}, turretAIInstanceId: '{data.turretAIInstanceId}', isActive: {data.isActive}");
         
-        Debug.Log($"[TankAssembly] Rigidbody configured - Mass: {tankRigidbody.mass}, LinearDamping: {tankRigidbody.linearDamping}, AngularDamping: {tankRigidbody.angularDamping}");        // Store component data for TankMan (if present) - REMOVED: Using stat-based approach
+        // Ensure NavMeshAgent is present for smooth movement
+        var navAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+        if (navAgent == null)
+        {
+            navAgent = gameObject.AddComponent<UnityEngine.AI.NavMeshAgent>();
+        }
+        
+        // Configure NavMeshAgent for tank movement
+        navAgent.speed = Mathf.Max(1f, data.enginePower - (data.totalWeight * 0.1f)); // Use calculated move speed
+        navAgent.angularSpeed = Mathf.Max(30f, 90f - (data.totalWeight * 0.5f)); // Use calculated turn speed
+        navAgent.acceleration = 8f; // Reasonable acceleration
+        navAgent.stoppingDistance = 1f; // Stop close to destination
+        navAgent.radius = 2f; // Tank size
+        navAgent.height = 3f; // Tank height
+        navAgent.baseOffset = 0f; // Keep agent at NavMesh level
+        navAgent.obstacleAvoidanceType = UnityEngine.AI.ObstacleAvoidanceType.HighQualityObstacleAvoidance;
+        
+        // CRITICAL: Configure NavMeshAgent for proper tank movement
+        navAgent.updatePosition = true; // NavMeshAgent controls position
+        navAgent.updateRotation = false; // Disable NavMeshAgent rotation so we can handle terrain following manually
+        navAgent.updateUpAxis = false; // Prevent NavMeshAgent from forcing upright orientation
+        
+        Debug.Log($"[TankAssembly] NavMeshAgent configured - Speed: {navAgent.speed}, AngularSpeed: {navAgent.angularSpeed}");
+        
+        // Ensure basePivot and turretPivot are positioned correctly above the NavMesh surface
+        // The tank model should sit ON the ground, not IN it
+        if (basePivot != null)
+        {
+            basePivot.localPosition = new Vector3(0f, 4f, 0f); // Lift base components 4 units above ground
+            Debug.Log($"[TankAssembly] Set basePivot local position to: {basePivot.localPosition}");
+        }
+        if (turretPivot != null)
+        {
+            turretPivot.localPosition = new Vector3(0f, 4.5f, 0f); // Lift turret above base
+            Debug.Log($"[TankAssembly] Set turretPivot local position to: {turretPivot.localPosition}");
+        }        // Store component data for TankMan (if present) - REMOVED: Using stat-based approach
         // Component stats are now stored directly in TankSlotData, no ScriptableObject references needed
         Debug.Log($"[TankAssembly] Using stat-based approach - component stats are stored directly in TankSlotData");
               // Ensure TankMan component is present and configured

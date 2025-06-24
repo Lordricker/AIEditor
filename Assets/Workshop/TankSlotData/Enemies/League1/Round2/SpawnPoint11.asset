@@ -10,32 +10,32 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 740ec3c473eeccd4ebed021fa2aa7a40, type: 3}
-  m_Name: TankSlot 0
+  m_Name: SpawnPoint11
   m_EditorClassIdentifier: 
   isActive: 1
-  teamId: 0
-  isPlayerControlled: 1
-  displayName: 
+  teamId: 1
+  isPlayerControlled: 0
+  displayName: Scout Enemy
   turretPrefab: {fileID: 3704434931606161932, guid: dc7582a3f117593469e8d4f4f5624cac, type: 3}
   armorPrefab: {fileID: 1316712241508069579, guid: 25200d0eb4865bd40888054547fedd0e, type: 3}
   engineFramePrefab: {fileID: 3813114062362436018, guid: faafdb4b5d255354cb37e2af4c6ce1fc, type: 3}
   turretAI: {fileID: 11400000, guid: ab6cd250427dc3d4fbbfc7a0b350daeb, type: 2}
   navAI: {fileID: 11400000, guid: 506fd08bc7cbe5249aebd615afcc63ed, type: 2}
-  turretDamage: 10
-  turretRange: 35
-  turretShotsPerSec: 2
+  turretDamage: 8
+  turretRange: 30
+  turretShotsPerSec: 3
   turretKnockback: Low
-  turretVisionRange: 60
-  turretVisionCone: 45
-  armorHP: 20
-  engineWeightCapacity: 40
-  enginePower: 25
-  totalWeight: 23
+  turretVisionRange: 70
+  turretVisionCone: 60
+  armorHP: 15
+  engineWeightCapacity: 30
+  enginePower: 30
+  totalWeight: 18
   engineFrameInstanceId: Heavy Engine_a200dc9b-8188-4dc3-a14b-dfd8ba1f10ec
   armorInstanceId: Light Plate_026776f7-1822-444d-9c10-c57abd413aab
   turretInstanceId: Rifle_996d058b-713f-4d4a-a850-1a82bcd49852
   turretAIInstanceId: Ferdinand_dd4dbceb-4111-410b-9996-3300c49ed4f8
   navAIInstanceId: Traveler_fdf33fd2-dc6f-4c1d-a95f-89fec22f291f
-  engineFrameColor: {r: 1, g: 0.5494866, b: 0, a: 1}
-  armorColor: {r: 0, g: 1, b: 0.40945935, a: 1}
-  turretColor: {r: 0.1567092, g: 0, b: 1, a: 1}
+  engineFrameColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
+  armorColor: {r: 0.6, g: 0.1, b: 0.1, a: 1}
+  turretColor: {r: 0.2, g: 0.2, b: 0.8, a: 1}

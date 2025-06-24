@@ -12,7 +12,7 @@ public enum GameMode
 public class ArenaManager : MonoBehaviour
 {    
     [Header("Spawn Points")]
-    public Transform[] spawnPoints = new Transform[15]; // Increased to support more spawn points
+    public Transform[] spawnPoints = new Transform[20]; // Increased to support more spawn points
     public GameObject tankPrefab; // Assign modular tank prefab in Inspector
     public TankSlotData[] tankSlots = new TankSlotData[10]; // Assign ScriptableObjects in Inspector
     
@@ -83,7 +83,7 @@ public class ArenaManager : MonoBehaviour
         }
         
         teamManager.AssignTeamsFromBattleMode();
-        Debug.Log("[ArenaManager] Teams assigned to all spawned tanks");
+        // Teams are assigned automatically via TankAssembly component
     }
     
     /// <summary>
@@ -200,9 +200,8 @@ public class ArenaManager : MonoBehaviour
         // Spawn player tanks (they will get teamId from their TankSlotData)
         SpawnTankArray(tankSlots, spawnPoints, "Player");
         
-        // Spawn enemy tanks (they will get teamId from their TankSlotData)
-        Transform[] enemySpawns = enemySpawnPoints.Length > 0 && enemySpawnPoints[0] != null ? enemySpawnPoints : spawnPoints;
-        SpawnTankArray(enemyTankSlots, enemySpawns, "Enemy", spawnPoints.Length);
+        // Spawn enemy tanks using their filename to determine spawn point
+        SpawnEnemyTanksAtNamedSpawnPoints();
     }
     
     void SpawnMultiplayerTanks()
@@ -237,6 +236,76 @@ public class ArenaManager : MonoBehaviour
         }
     }
     
+    void SpawnEnemyTanksAtNamedSpawnPoints()
+    {
+        Debug.Log($"[ArenaManager] SpawnEnemyTanksAtNamedSpawnPoints called. Enemy tank slots count: {enemyTankSlots.Length}");
+        
+        for (int i = 0; i < enemyTankSlots.Length; i++)
+        {
+            if (enemyTankSlots[i] != null)
+            {
+                Debug.Log($"[ArenaManager] Enemy slot {i}: {enemyTankSlots[i].name}, isActive: {enemyTankSlots[i].isActive}, hasEngine: {enemyTankSlots[i].engineFramePrefab != null}");
+                
+                if (enemyTankSlots[i].isActive && enemyTankSlots[i].engineFramePrefab != null)
+                {
+                    // Extract spawn point number from the SO name and convert to array index
+                    // SpawnPoint10 -> array index 0, SpawnPoint11 -> array index 1, etc.
+                    string soName = enemyTankSlots[i].name;
+                    int spawnPointIndex = ExtractSpawnPointFromName(soName);
+                    
+                    if (spawnPointIndex >= 0 && spawnPointIndex < enemySpawnPoints.Length)
+                    {
+                        if (enemySpawnPoints[spawnPointIndex] != null)
+                        {
+                            GameObject tank = Instantiate(tankPrefab, enemySpawnPoints[spawnPointIndex].position, enemySpawnPoints[spawnPointIndex].rotation);
+                            
+                            // Set the tank's name to include team and type information
+                            string tankName = !string.IsNullOrEmpty(enemyTankSlots[i].displayName) ? enemyTankSlots[i].displayName : $"EnemyTank_{i}";
+                            tank.name = $"{tankName}_Team{enemyTankSlots[i].teamId}_Spawn{spawnPointIndex}";
+                            
+                            TankAssembly assembly = tank.GetComponent<TankAssembly>();
+                            if (assembly != null)   
+                            {
+                                assembly.Assemble(enemyTankSlots[i]);
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[ArenaManager] Enemy spawn point {spawnPointIndex} is null in enemySpawnPoints array");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[ArenaManager] Invalid enemy spawn point index {spawnPointIndex} for enemy tank {soName}. Array length: {enemySpawnPoints.Length}");
+                    }
+                }
+            }
+            else
+            {
+                Debug.Log($"[ArenaManager] Enemy slot {i} is null");
+            }
+        }
+    }
+    
+    int ExtractSpawnPointFromName(string soName)
+    {
+        // Look for "SpawnPoint" followed by a number (e.g., "SpawnPoint10")
+        if (soName.StartsWith("SpawnPoint"))
+        {
+            string numberPart = soName.Substring("SpawnPoint".Length);
+            
+            if (int.TryParse(numberPart, out int spawnIndex))
+            {
+                // Convert SpawnPoint10-19 to array indices 0-9
+                // SpawnPoint10 -> index 0, SpawnPoint11 -> index 1, etc.
+                return spawnIndex - 10;
+            }
+        }
+        
+        Debug.LogWarning($"[ArenaManager] Could not extract spawn point number from SO name: {soName}. Expected format: SpawnPoint##");
+        return -1;
+    }
+
     /// <summary>
     /// Get the Unity layer for a specific team - LEGACY METHOD
     /// Use SimpleTeamManager instead for new implementations

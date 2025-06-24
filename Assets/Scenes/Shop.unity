@@ -9223,7 +9223,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Arena 1
+  m_text: Arena 2
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -9867,16 +9867,9 @@ MonoBehaviour:
   leagues:
   - leagueButton: {fileID: 1764555438}
     arenaListPanel: {fileID: 49524732}
-  - leagueButton: {fileID: 689685049}
-    arenaListPanel: {fileID: 1121795787}
-  - leagueButton: {fileID: 74853354}
-    arenaListPanel: {fileID: 420773647}
-  - leagueButton: {fileID: 2070871138}
-    arenaListPanel: {fileID: 1486491141}
-  - leagueButton: {fileID: 801733632}
-    arenaListPanel: {fileID: 682611473}
-  - leagueButton: {fileID: 708977934}
-    arenaListPanel: {fileID: 548279928}
+    arenaButtons:
+    - {fileID: 1680647034}
+    - {fileID: 2044588531}
 --- !u!1 &1368002552
 GameObject:
   m_ObjectHideFlags: 0
@@ -11701,7 +11694,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 82.99988, y: -25}
+  m_AnchoredPosition: {x: 83, y: -73.4}
   m_SizeDelta: {x: 96, y: 24.2}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &1653169295
@@ -12405,7 +12398,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 82.99988, y: -25}
+  m_AnchoredPosition: {x: 83, y: -25}
   m_SizeDelta: {x: 96, y: 24.2}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &1680647034
@@ -15261,7 +15254,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 82.99988, y: -25}
+  m_AnchoredPosition: {x: 83, y: -49.2}
   m_SizeDelta: {x: 96, y: 24.2}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &2044588531
@@ -15307,7 +15300,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 2044588532}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1363101396}
+        m_TargetAssemblyTypeName: LeagueDropdownManager, Assembly-CSharp
+        m_MethodName: OnArenaButtonClicked
+        m_Mode: 5
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: Arena1
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!114 &2044588532
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16257,7 +16262,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Arena 1
+  m_text: Arena 3
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

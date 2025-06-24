@@ -16,7 +16,7 @@ MonoBehaviour:
   description: Light mobile armor
   cost: 100
   weight: 5
-  modelPrefab: {fileID: 919132149155446097, guid: 83b87b2d7f2f3574c91565ec5b1ea8a4, type: 3}
+  modelPrefab: {fileID: 1316712241508069579, guid: 25200d0eb4865bd40888054547fedd0e, type: 3}
   category: 1
   instanceId: 
   customColor: {r: 1, g: 1, b: 1, a: 1}

@@ -4,8 +4,15 @@ using AiEditor;
 [CreateAssetMenu(menuName = "Tank/SlotData")]
 public class TankSlotData : ScriptableObject
 {
+    [Header("Tank Configuration")]
     public bool isActive;
     public int teamId;
+    
+    [Header("Tank Type")]
+    [Tooltip("If true, this tank slot is controlled by the player and can be edited in the workshop")]
+    public bool isPlayerControlled = true;
+    [Tooltip("Display name for this tank (for enemies or special units)")]
+    public string displayName = "";
     
     // Prefab references
     public GameObject turretPrefab;

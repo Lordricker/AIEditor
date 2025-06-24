@@ -59,6 +59,8 @@ public class TankSlotButtonUI : MonoBehaviour
         {            if (data.category == ComponentCategory.EngineFrame) {
                 slotData.engineFramePrefab = data.modelPrefab;
                 slotData.engineFrameInstanceId = data.instanceId;
+                // Save the component's custom color to TankSlotData
+                slotData.engineFrameColor = data.customColor;
                 // Copy stats from permanent ScriptableObject data
 #if UNITY_EDITOR
                 var permanentEngineData = FindPermanentComponentData<EngineFrameData>(data.title);
@@ -72,6 +74,8 @@ public class TankSlotButtonUI : MonoBehaviour
             } else if (data.category == ComponentCategory.Armor) {
                 slotData.armorPrefab = data.modelPrefab;
                 slotData.armorInstanceId = data.instanceId;
+                // Save the component's custom color to TankSlotData
+                slotData.armorColor = data.customColor;
                 // Copy stats from permanent ScriptableObject data
 #if UNITY_EDITOR
                 var permanentArmorData = FindPermanentComponentData<ArmorData>(data.title);
@@ -84,6 +88,8 @@ public class TankSlotButtonUI : MonoBehaviour
             } else if (data.category == ComponentCategory.Turret) {
                 slotData.turretPrefab = data.modelPrefab;
                 slotData.turretInstanceId = data.instanceId;
+                // Save the component's custom color to TankSlotData
+                slotData.turretColor = data.customColor;
                 // Copy stats from permanent ScriptableObject data
 #if UNITY_EDITOR
                 var permanentTurretData = FindPermanentComponentData<TurretData>(data.title);
@@ -134,6 +140,12 @@ public class TankSlotButtonUI : MonoBehaviour
             }
             // Add more categories as needed
         }
+        
+        // Mark the ScriptableObject as dirty for saving color changes
+        #if UNITY_EDITOR
+        UnityEditor.EditorUtility.SetDirty(slotData);
+        #endif
+        
         UpdateAssignedComponentsFromSlotData();
         // Refresh preview and stats if this slot is selected
         var workshopUI = FindFirstObjectByType<WorkshopUIManager>();
@@ -248,23 +260,42 @@ public class TankSlotButtonUI : MonoBehaviour
             if (!string.IsNullOrEmpty(slotData.engineFrameInstanceId))
             {
                 var comp = workshopUI.playerInventory.Find(c => c.instanceId == slotData.engineFrameInstanceId);
-                if (comp != null) assignedComponents[ComponentCategory.EngineFrame] = comp;
+                if (comp != null) 
+                {
+                    // Restore color from TankSlotData
+                    comp.customColor = slotData.engineFrameColor;
+                    assignedComponents[ComponentCategory.EngineFrame] = comp;
+                }
             }
             // Armor
             if (!string.IsNullOrEmpty(slotData.armorInstanceId))
             {
                 var comp = workshopUI.playerInventory.Find(c => c.instanceId == slotData.armorInstanceId);
-                if (comp != null) assignedComponents[ComponentCategory.Armor] = comp;
+                if (comp != null) 
+                {
+                    // Restore color from TankSlotData
+                    comp.customColor = slotData.armorColor;
+                    assignedComponents[ComponentCategory.Armor] = comp;
+                }
             }
             // Turret
             if (!string.IsNullOrEmpty(slotData.turretInstanceId))
             {
                 var comp = workshopUI.playerInventory.Find(c => c.instanceId == slotData.turretInstanceId);
-                if (comp != null) assignedComponents[ComponentCategory.Turret] = comp;
+                if (comp != null) 
+                {
+                    // Restore color from TankSlotData
+                    comp.customColor = slotData.turretColor;
+                    assignedComponents[ComponentCategory.Turret] = comp;
+                }
             }            // AITree components (both legacy TurretAI/NavAI and new AITree category)
             if (!string.IsNullOrEmpty(slotData.turretAIInstanceId)) {
                 // Try to find in playerInventory first
                 var comp = workshopUI.playerInventory.Find(c => c.instanceId == slotData.turretAIInstanceId);
+                if (comp == null) {
+                    // If not found in inventory, try to load from disk (for AiTreeAssets)
+                    comp = LoadAITreeAssetFromDisk(slotData.turretAIInstanceId, AiBranchType.Turret);
+                }
                 if (comp != null) {
                     assignedComponents[ComponentCategory.TurretAI] = comp;
                     // Also add to AITree category for unified handling
@@ -275,6 +306,10 @@ public class TankSlotButtonUI : MonoBehaviour
             if (!string.IsNullOrEmpty(slotData.navAIInstanceId)) {
                 // Try to find in playerInventory first
                 var comp = workshopUI.playerInventory.Find(c => c.instanceId == slotData.navAIInstanceId);
+                if (comp == null) {
+                    // If not found in inventory, try to load from disk (for AiTreeAssets)
+                    comp = LoadAITreeAssetFromDisk(slotData.navAIInstanceId, AiBranchType.Nav);
+                }
                 if (comp != null) {
                     assignedComponents[ComponentCategory.NavAI] = comp;
                     // Also add to AITree category for unified handling
@@ -337,13 +372,30 @@ public class TankSlotButtonUI : MonoBehaviour
         if (component.category == ComponentCategory.AITree && component is AiTreeAsset aiAsset)
         {
             if (aiAsset.branchType == AiBranchType.Turret)
-                return slotData.turretAI != null;
+            {
+                // Only a conflict if there's a different turret AI assigned
+                return slotData.turretAI != null && slotData.turretAIInstanceId != component.instanceId;
+            }
             else if (aiAsset.branchType == AiBranchType.Nav)
-                return slotData.navAI != null;
+            {
+                // Only a conflict if there's a different nav AI assigned
+                return slotData.navAI != null && slotData.navAIInstanceId != component.instanceId;
+            }
         }
         
-        // For other categories, use the standard category check
-        return HasCategory(component.category);
+        // For other categories, check if there's a different component of the same category
+        if (component.category == ComponentCategory.EngineFrame)
+            return slotData.engineFramePrefab != null && slotData.engineFrameInstanceId != component.instanceId;
+        else if (component.category == ComponentCategory.Armor)
+            return slotData.armorPrefab != null && slotData.armorInstanceId != component.instanceId;
+        else if (component.category == ComponentCategory.Turret)
+            return slotData.turretPrefab != null && slotData.turretInstanceId != component.instanceId;
+        else if (component.category == ComponentCategory.TurretAI)
+            return slotData.turretAI != null && slotData.turretAIInstanceId != component.instanceId;
+        else if (component.category == ComponentCategory.NavAI)
+            return slotData.navAI != null && slotData.navAIInstanceId != component.instanceId;
+        
+        return false;
     }
 
     public ComponentData GetComponentByCategory(ComponentCategory category)
@@ -357,6 +409,53 @@ public class TankSlotButtonUI : MonoBehaviour
     public string GetAssignedTankName(ComponentData data)
     {
         return HasComponent(data) ? TankName : "";
+    }
+
+    /// <summary>
+    /// Loads an AI Tree Asset from disk based on instanceId and branch type
+    /// </summary>
+    private AiTreeAsset LoadAITreeAssetFromDisk(string instanceId, AiBranchType branchType)
+    {
+#if UNITY_EDITOR
+        string folderPath = branchType == AiBranchType.Turret 
+            ? "Assets/AiEditor/AISaveFiles/TurretFiles/" 
+            : "Assets/AiEditor/AISaveFiles/NavFiles/";
+        
+        // Search through all files in the folder to find the one with matching instanceId
+        if (System.IO.Directory.Exists(folderPath))
+        {
+            string[] files = System.IO.Directory.GetFiles(folderPath, "*.asset");
+            foreach (string filePath in files)
+            {
+                var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiTreeAsset>(filePath);
+                if (asset != null && asset.instanceId == instanceId && asset.branchType == branchType)
+                {
+                    return asset;
+                }
+            }
+        }
+        
+        // If not found in specific folder, also check main AISaveFiles folder
+        string mainFolderPath = "Assets/AiEditor/AISaveFiles/";
+        if (System.IO.Directory.Exists(mainFolderPath))
+        {
+            string[] files = System.IO.Directory.GetFiles(mainFolderPath, "*.asset");
+            foreach (string filePath in files)
+            {
+                var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiTreeAsset>(filePath);
+                if (asset != null && asset.instanceId == instanceId && asset.branchType == branchType)
+                {
+                    return asset;
+                }
+            }
+        }
+        
+        Debug.LogWarning($"[TankSlotButtonUI] Could not load AI Tree asset with instanceId: {instanceId} and branchType: {branchType}");
+        return null;
+#else
+        Debug.LogWarning("[TankSlotButtonUI] AI Tree asset loading from disk is only supported in editor mode");
+        return null;
+#endif
     }
 
     // Remove this method from TankSlotButtonUI, as prefab lookup should be centralized in WorkshopUIManager
