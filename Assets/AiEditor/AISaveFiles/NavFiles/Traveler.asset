@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 644b83c0a12cafe4b90e46db268763f8, type: 3}
+  m_Name: Traveler
+  m_EditorClassIdentifier: 
+  title: Traveler
+  description: AI behavior tree for Nav control
+  cost: 100
+  weight: 1
+  modelPrefab: {fileID: 0}
+  category: 2
+  instanceId: Traveler_2c19f860-9ef7-4101-9b37-17b6c2a5fd4c
+  customColor: {r: 1, g: 1, b: 1, a: 1}
+  branchType: 2
+  nodes:
+  - nodeId: 006327ce-f269-4505-ad89-c4f84205b172
+    nodeType: SubAINode(Clone)
+    nodeLabel: at
+    position: {x: -2288.2302, y: -20.334717}
+  connections:
+  - fromNodeId: StartNavButton
+    fromPortId: NavOrigin
+    toNodeId: 006327ce-f269-4505-ad89-c4f84205b172
+    toPortId: Input
+  executableNodes:
+  - nodeId: 006327ce-f269-4505-ad89-c4f84205b172
+    methodName: At
+    originalLabel: at
+    nodeType: 3
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -2288.2302, y: -20.334717}
+  startNodeId: 006327ce-f269-4505-ad89-c4f84205b172
+  treeName: Traveler

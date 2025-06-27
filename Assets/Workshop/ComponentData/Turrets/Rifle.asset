@@ -20,9 +20,11 @@ MonoBehaviour:
   category: 0
   instanceId: 
   customColor: {r: 1, g: 1, b: 1, a: 1}
+  turretType: 0
   damage: 10
-  range: 35
-  shotspersec: 2
+  range: 100
+  shotspersec: 1
+  bulletSpeed: 100
   knockback: Low
-  visionRange: 60
+  visionRange: 100
   visionCone: 45

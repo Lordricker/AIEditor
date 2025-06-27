@@ -19,8 +19,8 @@ MonoBehaviour:
   turretPrefab: {fileID: 3704434931606161932, guid: dc7582a3f117593469e8d4f4f5624cac, type: 3}
   armorPrefab: {fileID: 1316712241508069579, guid: 25200d0eb4865bd40888054547fedd0e, type: 3}
   engineFramePrefab: {fileID: 3813114062362436018, guid: faafdb4b5d255354cb37e2af4c6ce1fc, type: 3}
-  turretAI: {fileID: 11400000, guid: ab6cd250427dc3d4fbbfc7a0b350daeb, type: 2}
-  navAI: {fileID: 11400000, guid: 506fd08bc7cbe5249aebd615afcc63ed, type: 2}
+  turretAI: {fileID: 0}
+  navAI: {fileID: 0}
   turretDamage: 10
   turretRange: 35
   turretShotsPerSec: 2

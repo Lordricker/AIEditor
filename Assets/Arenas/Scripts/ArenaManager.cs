@@ -1,4 +1,7 @@
 using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using System.Linq;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -36,11 +39,20 @@ public class ArenaManager : MonoBehaviour
     [SerializeField] private GameMode gameMode = GameMode.Singleplayer;
     [SerializeField] private int playerCount = 1; // For multiplayer modes
     
+    [Header("Victory/Loss System")]
+    [SerializeField] private Canvas uiCanvas; // Main UI Canvas
+    [SerializeField] private GameObject victoryPanel; // Victory panel to show when player wins
+    [SerializeField] private GameObject lossPanel; // Loss panel to show when player loses
+    [SerializeField] private float gameEndCheckInterval = 1f; // How often to check game state
+    
     [Header("Legacy Team Layer Configuration (Deprecated)")]
     [Tooltip("Unity layer for Team A tanks - DEPRECATED: Use SimpleTeamManager instead")]
     public int teamALayer = 10; // Layer 10 for allies
     [Tooltip("Unity layer for Team B tanks - DEPRECATED: Use SimpleTeamManager instead")]
     public int teamBLayer = 11; // Layer 11 for enemies
+    
+    private bool gameEnded = false;
+    private SimpleTeamManager teamManager;
     
     void Start()
     {
@@ -68,6 +80,9 @@ public class ArenaManager : MonoBehaviour
         var camController = Object.FindFirstObjectByType<CameraController>();
         if (camController != null)
             camController.RefreshAnchors();
+        
+        // Start monitoring game state for victory/loss conditions
+        InvokeRepeating(nameof(CheckGameState), gameEndCheckInterval, gameEndCheckInterval);
     }
     
     /// <summary>
@@ -75,7 +90,7 @@ public class ArenaManager : MonoBehaviour
     /// </summary>
     void AssignTeams()
     {
-        SimpleTeamManager teamManager = FindFirstObjectByType<SimpleTeamManager>();
+        teamManager = FindFirstObjectByType<SimpleTeamManager>();
         if (teamManager == null)
         {
             GameObject teamManagerObj = new GameObject("SimpleTeamManager");
@@ -333,6 +348,184 @@ public class ArenaManager : MonoBehaviour
         {
             AssignLayerRecursively(child.gameObject, layer);
         }
+    }
+
+    /// <summary>
+    /// Checks if the game should end based on remaining teams
+    /// </summary>
+    void CheckGameState()
+    {
+        if (gameEnded || teamManager == null)
+            return;
+            
+        // Get all alive tanks organized by team
+        var aliveTanksByTeam = GetAliveTanksByTeam();
+        
+        // Check if only one team remains or no teams remain
+        if (aliveTanksByTeam.Count <= 1)
+        {
+            EndGame(aliveTanksByTeam);
+        }
+    }
+    
+    /// <summary>
+    /// Gets all alive tanks organized by team ID
+    /// </summary>
+    System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<TankMan>> GetAliveTanksByTeam()
+    {
+        var aliveTanksByTeam = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<TankMan>>();
+        
+        // Find all TankMan components
+        TankMan[] allTanks = FindObjectsByType<TankMan>(FindObjectsSortMode.None);
+        
+        foreach (TankMan tank in allTanks)
+        {
+            // Only count alive tanks
+            if (tank.CurrentHealth > 0)
+            {
+                // Get team info
+                TankTeamInfo teamInfo = tank.GetComponent<TankTeamInfo>();
+                if (teamInfo != null)
+                {
+                    int teamId = teamInfo.teamId;
+                    
+                    if (!aliveTanksByTeam.ContainsKey(teamId))
+                    {
+                        aliveTanksByTeam[teamId] = new System.Collections.Generic.List<TankMan>();
+                    }
+                    
+                    aliveTanksByTeam[teamId].Add(tank);
+                }
+            }
+        }
+        
+        return aliveTanksByTeam;
+    }
+    
+    /// <summary>
+    /// Ends the game and shows victory or loss panel
+    /// </summary>
+    void EndGame(System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<TankMan>> aliveTanksByTeam)
+    {
+        gameEnded = true;
+        CancelInvoke(nameof(CheckGameState)); // Stop checking game state
+        
+        Debug.Log($"[ArenaManager] Game ended! Remaining teams: {aliveTanksByTeam.Count}");
+        
+        // Find UI Canvas if not assigned
+        if (uiCanvas == null)
+        {
+            uiCanvas = FindFirstObjectByType<Canvas>();
+        }
+        
+        if (uiCanvas == null)
+        {
+            Debug.LogError("[ArenaManager] No UI Canvas found! Cannot show victory/loss panels.");
+            return;
+        }
+        
+        // Look for victory and loss panels under the UI Canvas
+        if (victoryPanel == null)
+        {
+            Transform victoryTransform = uiCanvas.transform.Find("VictoryPanel");
+            if (victoryTransform != null)
+                victoryPanel = victoryTransform.gameObject;
+        }
+        
+        if (lossPanel == null)
+        {
+            Transform lossTransform = uiCanvas.transform.Find("LossPanel");
+            if (lossTransform != null)
+                lossPanel = lossTransform.gameObject;
+        }
+        
+        // Determine if player team won
+        bool playerWon = false;
+        
+        if (aliveTanksByTeam.Count == 1)
+        {
+            // One team remains - check if it's the player team (team 0 in singleplayer)
+            int winningTeamId = aliveTanksByTeam.Keys.First();
+            
+            if (gameMode == GameMode.Singleplayer)
+            {
+                // In singleplayer, player is team 0, enemies are team 1
+                playerWon = (winningTeamId == 0);
+            }
+            else
+            {
+                // In multiplayer, check if winning team matches player's team
+                int myTeamId = PlayerPrefs.GetInt("MyTeamId", 0);
+                playerWon = (winningTeamId == myTeamId);
+            }
+            
+            Debug.Log($"[ArenaManager] Winning team: {winningTeamId}, Player won: {playerWon}");
+        }
+        else
+        {
+            // No teams remain (draw) - treat as loss
+            playerWon = false;
+            Debug.Log("[ArenaManager] No teams remain - treating as loss");
+        }
+        
+        // Show appropriate panel with fade-in animation
+        if (playerWon)
+        {
+            if (victoryPanel != null)
+            {
+                StartCoroutine(FadeInPanel(victoryPanel));
+                Debug.Log("[ArenaManager] Victory panel shown!");
+            }
+            else
+            {
+                Debug.LogWarning("[ArenaManager] Victory panel not found! Please create a 'VictoryPanel' GameObject under the UI Canvas.");
+            }
+        }
+        else
+        {
+            if (lossPanel != null)
+            {
+                StartCoroutine(FadeInPanel(lossPanel));
+                Debug.Log("[ArenaManager] Loss panel shown!");
+            }
+            else
+            {
+                Debug.LogWarning("[ArenaManager] Loss panel not found! Please create a 'LossPanel' GameObject under the UI Canvas.");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Smoothly fades in a panel over 0.25 seconds
+    /// </summary>
+    System.Collections.IEnumerator FadeInPanel(GameObject panel)
+    {
+        // Ensure panel is active
+        panel.SetActive(true);
+        
+        // Get or add CanvasGroup component for alpha control
+        CanvasGroup canvasGroup = panel.GetComponent<CanvasGroup>();
+        if (canvasGroup == null)
+        {
+            canvasGroup = panel.AddComponent<CanvasGroup>();
+        }
+        
+        // Start with alpha at 0 (fully transparent)
+        canvasGroup.alpha = 0f;
+        
+        // Fade in over 0.25 seconds
+        float fadeDuration = 0.25f;
+        float elapsedTime = 0f;
+        
+        while (elapsedTime < fadeDuration)
+        {
+            elapsedTime += Time.unscaledDeltaTime; // Use unscaled time since game is paused
+            canvasGroup.alpha = Mathf.Clamp01(elapsedTime / fadeDuration);
+            yield return null;
+        }
+        
+        // Ensure alpha is exactly 1 at the end
+        canvasGroup.alpha = 1f;
     }
 }
 

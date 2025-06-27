@@ -74,7 +74,28 @@ public class TankAssembly : MonoBehaviour
         
         // Set the tank slot data so TankMan can calculate stats
         tankMan.SetTankSlotData(data);
+        
+        // Load and assign the universal bullet prefab
+        GameObject bulletPrefab = Resources.Load<GameObject>("Prefabs/BulletObject");
+        if (bulletPrefab != null)
+        {
+            tankMan.SetBulletPrefab(bulletPrefab);
+            Debug.Log($"TankAssembly: Assigned bullet prefab to {gameObject.name}");
+        }
+        else
+        {
+            Debug.LogWarning($"TankAssembly: Could not load bullet prefab from Resources/Prefabs/BulletObject for {gameObject.name}");
+        }
+        
         Debug.Log($"TankAssembly: Added and configured TankMan for {gameObject.name}");
+        
+        // Add HP bar component
+        TankHPBar hpBar = GetComponent<TankHPBar>();
+        if (hpBar == null)
+        {
+            hpBar = gameObject.AddComponent<TankHPBar>();
+            Debug.Log($"TankAssembly: Added HP bar to {gameObject.name}");
+        }
         
         // Set the appropriate layer for tank faction (only on root object)
         SetTankLayer();

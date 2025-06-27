@@ -41,7 +41,7 @@ Cognitanks is a Unity-based tank combat game where players can:
 - **AI Node Types**:
   - **Conditions**: IfEnemy, IfAlly, IfHP, IfRange, IfRifle, etc.
   - **Actions**: Move, Chase, Flee, Fire, Wander, Wait, TrackTarget
-  - **SubAI**: Reference to other AI trees (planned feature)
+  - **SubAI**: Reference to other AI trees (IMPLEMENTED - allows modular AI composition)
 
 - **AI Execution**: TankMan executes dual coroutines for NavAI and TurretAI simultaneously
 
@@ -73,6 +73,23 @@ Cognitanks is a Unity-based tank combat game where players can:
   - Provides unified component management
   - Supports visual customization via colors
 
+### 6. Universal Bullet System
+- **BulletScript.cs**: Single bullet prefab handles all projectiles
+  - All tanks fire the same BulletObject prefab from Resources/Prefabs/
+  - Bullets inherit stats from firing tank (damage, range, speed, team)
+  - Distance-based lifetime (destroys after traveling max range)
+  - Team-based damage (only harms enemy tanks)
+  - Supports both DirectFire and Artillery physics modes
+
+- **Turret Types**:
+  - **DirectFire**: Straight-line bullets, no gravity
+  - **Artillery**: Ballistic arc bullets with gravity simulation
+
+- **Integration**: 
+  - TankAssembly loads bullet prefab and assigns to TankMan
+  - FirePoint transforms found automatically in turret hierarchies
+  - AI nodes control firing logic (CanFire checks 2-degree aim accuracy)
+
 ## Key File Locations
 
 ### Core Systems
@@ -95,6 +112,14 @@ Cognitanks is a Unity-based tank combat game where players can:
 - `Assets/AiEditor/Scripts/` - Visual AI editor interface
 
 ## Recent Major Changes (June 2025)
+
+### SubAI System Implementation (December 2025)
+- **IMPLEMENTED**: Modular SubAI nodes allowing AI trees to reference other AI trees
+- **ADDED**: ContextMenuUI SubAI file browser with branch-specific folder filtering
+- **ENHANCED**: TankMan with SubAI execution logic (LoadSubAITree, ExecuteSubAI, ExecuteSubAIChain)
+- **FIXED**: Node type detection for SubAI nodes in AiEditorFileUI
+- **SEPARATED**: AI assets into NavFiles/ and TurretFiles/ folders for organization
+- **DEBUGGED**: Folder search logic to correctly locate referenced AI assets by branch type
 
 ### Team System Overhaul
 - **REMOVED**: Layer-based enemy detection (old system)
@@ -124,6 +149,14 @@ Cognitanks is a Unity-based tank combat game where players can:
 2. Implement as coroutine if time-based (StartCoroutine)
 3. Handle NavMeshAgent state checking
 4. Follow naming pattern: action verbs (Move, Fire, etc.)
+
+### Creating SubAI Trees
+1. Create specialized AI trees in appropriate folders:
+   - Navigation AI: `Assets/AiEditor/AISaveFiles/NavFiles/`
+   - Turret AI: `Assets/AiEditor/AISaveFiles/TurretFiles/`
+2. Reference them from other AI trees using SubAI nodes
+3. SubAI nodes automatically search correct folder based on current branch type
+4. Allows modular composition (e.g., basic movement + specialized combat behaviors)
 
 ### Creating Enemy Tanks
 1. Create TankSlotData asset in `Assets/Workshop/TankSlotData/Enemies/LeagueX/RoundY/`

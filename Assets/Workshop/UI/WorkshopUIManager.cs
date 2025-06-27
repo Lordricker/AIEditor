@@ -860,13 +860,58 @@ public class WorkshopUIManager : MonoBehaviour
             ? "Assets/AiEditor/AISaveFiles/TurretFiles/" 
             : "Assets/AiEditor/AISaveFiles/NavFiles/";
         
-        string assetPath = folderPath + instanceId + ".asset";
-          var aiTreeAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiEditor.AiTreeAsset>(assetPath);
-        if (aiTreeAsset != null && aiTreeAsset.branchType == branchType)
+        // Search through all files in the folder to find the one with matching instanceId
+        if (System.IO.Directory.Exists(folderPath))
         {
-            return aiTreeAsset;
+            string[] files = System.IO.Directory.GetFiles(folderPath, "*.asset");
+            foreach (string filePath in files)
+            {
+                var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiEditor.AiTreeAsset>(filePath);
+                if (asset != null && asset.instanceId == instanceId && asset.branchType == branchType)
+                {
+                    return asset;
+                }
+            }
         }
-          return null;
+        
+        // If not found in specific folder, also check main AISaveFiles folder
+        string mainFolderPath = "Assets/AiEditor/AISaveFiles/";
+        if (System.IO.Directory.Exists(mainFolderPath))
+        {
+            string[] files = System.IO.Directory.GetFiles(mainFolderPath, "*.asset");
+            foreach (string filePath in files)
+            {
+                var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiEditor.AiTreeAsset>(filePath);
+                if (asset != null && asset.instanceId == instanceId && asset.branchType == branchType)
+                {
+                    return asset;
+                }
+            }
+        }
+        
+        // If still not found, try to find by title as a fallback (for legacy compatibility)
+        string titleToFind = instanceId.Split('_')[0]; // Extract title from instanceId format
+        string[] allFolders = { folderPath, mainFolderPath };
+        
+        foreach (string folder in allFolders)
+        {
+            if (System.IO.Directory.Exists(folder))
+            {
+                string[] files = System.IO.Directory.GetFiles(folder, "*.asset");
+                foreach (string filePath in files)
+                {
+                    var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiEditor.AiTreeAsset>(filePath);
+                    if (asset != null && asset.branchType == branchType && 
+                        !string.IsNullOrEmpty(asset.title) && asset.title.Equals(titleToFind, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        Debug.LogWarning($"[WorkshopUIManager] Found AI asset by title fallback: {asset.title} (expected instanceId: {instanceId}, actual: {asset.instanceId})");
+                        return asset;
+                    }
+                }
+            }
+        }
+        
+        return null;
 #else
         return null;
 #endif

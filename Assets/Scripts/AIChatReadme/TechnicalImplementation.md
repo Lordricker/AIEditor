@@ -6,21 +6,31 @@
 TankSlotData (ScriptableObject)
 ├── References: AiTreeAsset (navAI, turretAI)
 ├── References: GameObject (turretPrefab, armorPrefab, engineFramePrefab)
-├── Contains: Component stats (damage, HP, weight, etc.)
+├── Contains: Component stats (damage, HP, weight, bulletSpeed, turretType)
 └── Used by: TankAssembly.Assemble()
 
 TankAssembly (MonoBehaviour)
 ├── Instantiates: Tank visuals from TankSlotData
 ├── Creates: TankMan component
 ├── Configures: NavMeshAgent
-└── Calls: TankMan.SetTankSlotData()
+├── Loads: Universal bullet prefab from Resources/Prefabs/BulletObject
+├── Finds: FirePoint transform in turret hierarchy
+└── Calls: TankMan.SetTankSlotData(), SetBulletPrefab(), SetTurretComponents()
 
 TankMan (MonoBehaviour) - MAIN TANK CONTROLLER
 ├── Executes: AI trees via coroutines
 ├── Manages: Sensor data and targeting
 ├── Controls: Movement via NavMeshAgent
-├── Handles: Combat and health
+├── Handles: Combat, health, and universal bullet firing
+├── Supports: DirectFire and Artillery turret types
 └── Uses: TankTeamInfo for team detection
+
+BulletScript (MonoBehaviour) - UNIVERSAL BULLET SYSTEM
+├── Inherits: Damage, range, team, and type from firing tank
+├── Handles: Distance-based lifetime destruction
+├── Applies: Damage only to enemy tanks
+├── Supports: Both direct-fire and artillery physics
+└── Attached to: BulletObject prefab
 
 TankTeamInfo (MonoBehaviour)
 ├── Stores: teamId (0=player, 1=enemy, etc.)
@@ -61,10 +71,54 @@ AiTreeAsset
 Condition Node (true) → Follow connection to next highest Y-value node
 Condition Node (false) → Backtrack to parent, check next highest Y-value connected node
 Action Node → Execute action, follow connection to next highest Y-value node
+SubAI Node → Load and execute referenced AI tree, then continue to next highest Y-value node
 No more connections → Restart from beginning
 ```
 
 **Note**: The execution system prioritizes nodes based on their Y-value position in the visual editor. When multiple nodes are connected, it always selects the one with the next highest Y-value. This ensures predictable execution flow based on the visual layout of the AI tree.
+
+### SubAI System Implementation
+
+#### SubAI Node Execution Flow
+1. **ExecuteSubAI()** → Validates SubAI node and extracts referenced AI name
+2. **LoadSubAITree()** → Searches appropriate folder based on current tree's branch type
+3. **ExecuteSubAIChain()** → Executes the referenced AI tree from its start node
+4. **Recursive Support** → SubAI trees can reference other SubAI trees (with depth limits)
+
+#### Folder Organization
+```
+Assets/AiEditor/AISaveFiles/
+├── NavFiles/ → Navigation AI trees (referenced by Nav branch SubAI nodes)
+├── TurretFiles/ → Turret AI trees (referenced by Turret branch SubAI nodes)
+└── [Legacy files] → Old AI trees before folder organization
+```
+
+#### SubAI Node Creation (ContextMenuUI)
+```csharp
+// Branch-specific file browser
+void PopulateSubAIFiles()
+{
+    string folderName = currentBranch == BranchType.Turret ? "TurretFiles" : "NavFiles";
+    // Load and display available AI files from appropriate folder
+    // Exclude currently open file to prevent self-reference
+}
+```
+
+#### SubAI Execution Logic (TankMan)
+```csharp
+void ExecuteSubAI(AiExecutableNode subAiNode, AiEditor.AiTreeAsset currentTree)
+{
+    // Load referenced AI tree from correct folder based on currentTree.branchType
+    var referencedAI = LoadSubAITree(subAiNode.originalLabel, subAiNode, currentTree);
+    
+    // Execute the referenced AI tree based on its branch type
+    if (referencedAI.branchType == AiEditor.AiBranchType.Nav) {
+        // Execute as navigation AI
+    } else if (referencedAI.branchType == AiEditor.AiBranchType.Turret) {
+        // Execute as turret AI
+    }
+}
+```
 
 ## Team System Implementation
 
@@ -210,6 +264,12 @@ bool inVisionCone = angleToTarget <= visionCone * 0.5f; // Half-angle check
 3. Return boolean result
 4. Add debug logging
 
+### Creating SubAI Trees
+1. Create AI trees in appropriate branch folders (NavFiles/ or TurretFiles/)
+2. Reference them using SubAI nodes in other AI trees
+3. SubAI nodes display the referenced AI's title, not filename
+4. Execution automatically loads from correct folder based on current branch context
+
 ### Creating Custom Actions
 1. Add case to TankMan.ExecuteAction()
 2. Implement as coroutine for time-based actions
@@ -223,6 +283,14 @@ bool inVisionCone = angleToTarget <= visionCone * 0.5f; // Half-angle check
 - Monitor sensor detection in console
 - Check AI tree connections in visual editor
 - Verify team assignments in inspector
+- Test SubAI references and folder search logic
+
+### SubAI System Testing
+- Verify SubAI nodes reference correct AI files
+- Check folder organization (NavFiles/ vs TurretFiles/)
+- Test recursive SubAI execution (SubAI referencing other SubAI)
+- Monitor debug logs for SubAI loading and execution
+- Ensure branch type determines correct folder search
 
 ### Movement Testing  
 - Ensure NavMesh is baked in arena scenes
@@ -235,3 +303,62 @@ bool inVisionCone = angleToTarget <= visionCone * 0.5f; // Half-angle check
 - Check team ID assignments
 - Test enemy detection in various scenarios
 - Monitor vision cone calculations
+
+## Universal Bullet System
+
+### Overview
+All tanks use the same bullet prefab (BulletObject) with stats inherited from the firing tank.
+
+### Bullet Prefab Setup
+- **Location**: `Assets/Resources/Prefabs/BulletObject.prefab`
+- **Components**: Rigidbody, Collider, BulletScript
+- **Physics**: Configured at runtime (gravity on/off based on turret type)
+
+### Firing Process
+1. **TankAssembly loads** BulletObject prefab via Resources.Load()
+2. **TankMan.Fire()** instantiates bullet at FirePoint
+3. **Stats inherited**: damage, range, bulletSpeed, team from TankSlotData
+4. **Physics configured**: Direct-fire (no gravity) vs Artillery (with gravity)
+5. **BulletScript.Initialize()** sets up bullet behavior
+
+### Turret Types
+```csharp
+public enum TurretType
+{
+    DirectFire,    // Straight-line bullets (rifles, cannons)
+    Artillery      // Ballistic arc bullets with gravity
+}
+```
+
+### Artillery Trajectory Calculation
+```csharp
+// CalculateArtilleryDirection() in TankMan
+// Calculates launch angle for ballistic trajectory
+// Applies velocity with vertical component for arc
+// Uses gravity for realistic projectile physics
+```
+
+### Bullet Behavior (BulletScript)
+- **Distance tracking**: Destroys bullet after traveling max range
+- **Team detection**: Only damages enemy tanks (different teamId)
+- **Damage application**: Reduces target tank's health
+- **Physics modes**: Gravity on/off based on turret type
+
+### AI Integration
+- **CanFire()**: Checks if turret aimed within 2 degrees of target
+- **Fire AI node**: Only executes if CanFire() returns true
+- **Ferdinand.asset**: Example AI tree with IfEnemy → Fire/CenterTarget logic
+
+### Resource Loading
+```csharp
+// In TankAssembly.Assemble()
+GameObject bulletPrefab = Resources.Load<GameObject>("Prefabs/BulletObject");
+tankMan.SetBulletPrefab(bulletPrefab);
+```
+
+### FirePoint Detection
+```csharp
+// FindFirePointRecursive() in TankAssembly
+// Searches turret hierarchy for "FirePoint" transform
+// Assigns to TankMan for bullet spawn location
+```

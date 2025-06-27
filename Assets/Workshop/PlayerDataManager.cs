@@ -127,7 +127,28 @@ public class PlayerDataManager : MonoBehaviour
             workshopUI.PopulateComponentList();
         }
         Debug.Log("Player data erased.");
-    }    // Call this after loading player data to restore AI references and activation states
+    }
+
+    /// <summary>
+    /// Quits the game application, saving player data first
+    /// </summary>
+    public void QuitGame()
+    {
+        Debug.Log("Quitting game...");
+        
+        // Save player data before quitting
+        SavePlayerData();
+        
+        #if UNITY_EDITOR
+        // In the editor, stop play mode
+        UnityEditor.EditorApplication.isPlaying = false;
+        #else
+        // In a built application, quit the application
+        Application.Quit();
+        #endif
+    }
+
+    // Call this after loading player data to restore AI references and activation states
     // Component stats are now stored directly in TankSlotData, so no ScriptableObject restoration needed
     public void RestoreComponentDataReferences(List<TankSlotData> allSlots)
     {
@@ -310,6 +331,28 @@ public class PlayerDataManager : MonoBehaviour
                 if (asset != null && asset.instanceId == instanceId && asset.branchType == branchType)
                 {
                     return asset;
+                }
+            }
+        }
+        
+        // If still not found, try to find by title as a fallback (for legacy compatibility)
+        string titleToFind = instanceId.Split('_')[0]; // Extract title from instanceId format
+        string[] allFolders = { folderPath, mainFolderPath };
+        
+        foreach (string folder in allFolders)
+        {
+            if (System.IO.Directory.Exists(folder))
+            {
+                string[] files = System.IO.Directory.GetFiles(folder, "*.asset");
+                foreach (string filePath in files)
+                {
+                    var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiEditor.AiTreeAsset>(filePath);
+                    if (asset != null && asset.branchType == branchType && 
+                        !string.IsNullOrEmpty(asset.title) && asset.title.Equals(titleToFind, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        Debug.LogWarning($"[PlayerDataManager] Found AI asset by title fallback: {asset.title} (expected instanceId: {instanceId}, actual: {asset.instanceId})");
+                        return asset;
+                    }
                 }
             }
         }

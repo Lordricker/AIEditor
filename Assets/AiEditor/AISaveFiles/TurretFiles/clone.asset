@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 644b83c0a12cafe4b90e46db268763f8, type: 3}
+  m_Name: clone
+  m_EditorClassIdentifier: 
+  title: clone
+  description: AI behavior tree for Turret control
+  cost: 100
+  weight: 1
+  modelPrefab: {fileID: 0}
+  category: 2
+  instanceId: Ferdinand_db2d879a-f96e-4feb-a179-b88b3305a641
+  customColor: {r: 1, g: 1, b: 1, a: 1}
+  branchType: 1
+  nodes:
+  - nodeId: 2bd407c0-be2d-4041-83a4-29fee8c14d1e
+    nodeType: SubAINode(Clone)
+    nodeLabel: Ferdinand
+    position: {x: -2213.1438, y: 40.14392}
+  connections:
+  - fromNodeId: StartTurretButton
+    fromPortId: TurretOrigin
+    toNodeId: 2bd407c0-be2d-4041-83a4-29fee8c14d1e
+    toPortId: Input
+  executableNodes:
+  - nodeId: 2bd407c0-be2d-4041-83a4-29fee8c14d1e
+    methodName: Ferdinand
+    originalLabel: Ferdinand
+    nodeType: 3
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -2213.1438, y: 40.14392}
+  startNodeId: 2bd407c0-be2d-4041-83a4-29fee8c14d1e
+  treeName: clone

@@ -8,17 +8,27 @@
   - Sensor data and targeting
   - Movement via NavMeshAgent
   - Combat and health management
+  - Universal bullet firing system
   - Team-based detection
 
 - **`TankSlotData.cs`** - ScriptableObject tank configuration data
   - Component references (prefabs, AI trees)
-  - Calculated stats (damage, HP, weight, speed)
+  - Calculated stats (damage, HP, weight, speed, bulletSpeed, turretType)
   - Player vs enemy tank settings
 
 - **`TankAssembly.cs`** - Tank instantiation and setup
   - Spawns visual components
   - Configures NavMeshAgent
   - Creates and configures TankMan
+  - Loads universal bullet prefab from Resources
+  - Finds and assigns FirePoint transforms
+
+### Universal Bullet System
+- **`BulletScript.cs`** - Universal projectile behavior
+  - Distance-based lifetime management
+  - Team-based damage application
+  - Support for DirectFire and Artillery physics
+  - Inherits stats from firing tank
 
 ### Team System
 - **`TankTeamInfo.cs`** - Component for team-based detection
@@ -35,13 +45,19 @@
 - **`AiTreeAsset.cs`** - AI behavior tree ScriptableObject
   - Node and connection data
   - Execution flow management
+  - SubAI node support
 
 - **`AiMethodConverter.cs`** - AI data conversion utilities
 - **`AiEditorFileUI.cs`** - AI file management interface
+  - SubAI node type detection (nodeType 3)
+  - Asset save/load with proper node type assignment
 
 ### AI Editor Interface
 - **`CanvasPanZoom.cs`** - AI editor camera controls
 - **`ContextMenuUI.cs`** - Right-click context menus
+  - SubAI file browser with branch-specific folder filtering
+  - SubAI node creation and AI file reference system
+  - Branch type detection for correct folder selection
 - **`NodeDraggable.cs`** - Node movement in editor
 - **`NodeDeleteUI.cs`** - Node deletion interface
 - **`OutputButtonDrag.cs`** - Connection creation
@@ -56,6 +72,9 @@
 ### Component Management
 - **`BaseClass.cs (ComponentData)`** - Base class for all components
 - **`TurretData.cs`** - Turret component data
+  - Combat stats (damage, range, bulletSpeed)
+  - TurretType enum (DirectFire, Artillery)
+  - Vision system (range, cone)
 - **`ArmorData.cs`** - Armor component data
 - **`EngineFrameData.cs`** - Engine/chassis component data
 - **`TankLoadout.cs`** - Complete tank configuration
@@ -161,6 +180,20 @@
 
 ## Recent Changes (June 2025)
 
+### SubAI System Implementation (December 2025)
+- **`ContextMenuUI.cs`** - Added SubAI file browser and node creation
+  - Branch-specific folder filtering (NavFiles/ vs TurretFiles/)
+  - SubAI node creation with proper AI file referencing
+  - Display of AI tree titles instead of filenames
+- **`TankMan.cs`** - Implemented SubAI execution logic
+  - ExecuteSubAI() method for loading and executing referenced AI trees
+  - LoadSubAITree() with branch-type-based folder searching
+  - ExecuteSubAIChain() for recursive SubAI execution
+  - Comprehensive debug logging for SubAI operations
+- **`AiEditorFileUI.cs`** - Enhanced node type detection
+  - SubAI nodes properly identified as nodeType 3
+  - GameObject name-based detection for SubAI nodes
+
 ### Modified Scripts
 - **`TankMan.cs`** - Major overhaul for team system integration
 - **`SimpleTeamManager.cs`** - Updated API usage, team assignment logic
@@ -184,6 +217,8 @@
 
 ### Adding AI Behaviors
 - Modify `TankMan.ExecuteCondition()` or `TankMan.ExecuteAction()`
+- For SubAI: Create modular AI trees in NavFiles/ or TurretFiles/ folders
+- Reference SubAI trees using SubAI nodes for modular composition
 
 ### Adding Tank Components
 - Create new ComponentData subclass
@@ -197,3 +232,37 @@
 ### Changing Team Mechanics
 - TankTeamInfo.cs for team relationships
 - SimpleTeamManager.cs for team assignment logic
+
+## SubAI System Organization
+
+### Asset Structure
+```
+Assets/AiEditor/AISaveFiles/
+├── NavFiles/               → Navigation AI trees (for Nav branch SubAI references)
+│   ├── Traveler.asset     → Example: SubAI node referencing "at.asset"
+│   ├── at.asset           → Simple navigation behavior
+│   └── [other nav AIs]
+├── TurretFiles/           → Turret AI trees (for Turret branch SubAI references)
+│   ├── clone.asset        → Example: SubAI node referencing "Ferdinand.asset"
+│   ├── Ferdinand.asset    → Turret combat behavior
+│   └── [other turret AIs]
+└── [Legacy files]         → AI files before folder organization
+```
+
+### SubAI Node Properties
+- **nodeType**: 3 (AiNodeType.SubAI)
+- **originalLabel**: Contains the filename of the referenced AI tree
+- **methodName**: Same as originalLabel for display purposes
+- **Visual Display**: Shows the referenced AI tree's title/TreeName, not filename
+
+### SubAI Execution Flow
+1. **Node Detection**: ContextMenuUI detects current branch type
+2. **File Browser**: Populates list from appropriate folder (NavFiles/ or TurretFiles/)
+3. **Node Creation**: SubAI node stores reference to selected AI file
+4. **Runtime Execution**: TankMan loads and executes referenced AI based on current tree's branch type
+5. **Recursive Support**: SubAI trees can reference other SubAI trees
+
+### Key Implementation Files
+- **`ContextMenuUI.cs`** - SubAI file browser and node creation
+- **`TankMan.cs`** - SubAI execution logic (ExecuteSubAI, LoadSubAITree, ExecuteSubAIChain)
+- **`AiEditorFileUI.cs`** - SubAI node type detection and serialization

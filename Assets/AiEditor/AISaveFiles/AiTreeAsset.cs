@@ -56,6 +56,12 @@ namespace AiEditor
             if (cost == 0) cost = 100;
             if (weight == 0) weight = 1;
             
+            // Ensure instanceId is set for legacy assets that might not have one
+            if (string.IsNullOrEmpty(instanceId) && !string.IsNullOrEmpty(title))
+            {
+                instanceId = title + "_" + System.Guid.NewGuid().ToString();
+            }
+            
             // Initialize description if empty
             if (string.IsNullOrEmpty(description))
             {

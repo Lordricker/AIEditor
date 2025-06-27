@@ -450,6 +450,28 @@ public class TankSlotButtonUI : MonoBehaviour
             }
         }
         
+        // If still not found, try to find by title as a fallback (for legacy compatibility)
+        string titleToFind = instanceId.Split('_')[0]; // Extract title from instanceId format
+        string[] allFolders = { folderPath, mainFolderPath };
+        
+        foreach (string folder in allFolders)
+        {
+            if (System.IO.Directory.Exists(folder))
+            {
+                string[] files = System.IO.Directory.GetFiles(folder, "*.asset");
+                foreach (string filePath in files)
+                {
+                    var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiTreeAsset>(filePath);
+                    if (asset != null && asset.branchType == branchType && 
+                        !string.IsNullOrEmpty(asset.title) && asset.title.Equals(titleToFind, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        Debug.LogWarning($"[TankSlotButtonUI] Found AI asset by title fallback: {asset.title} (expected instanceId: {instanceId}, actual: {asset.instanceId})");
+                        return asset;
+                    }
+                }
+            }
+        }
+        
         Debug.LogWarning($"[TankSlotButtonUI] Could not load AI Tree asset with instanceId: {instanceId} and branchType: {branchType}");
         return null;
 #else

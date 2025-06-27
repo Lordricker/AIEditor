@@ -16,7 +16,6 @@ public class ArenaUIManager : MonoBehaviour
     public GameObject pauseOverlay;
     public Button pauseButton;
     public Button resumeButton;
-    public Button returnToWorkshopButton;
     public Button settingsButton;
 
     private float[] speedLevels = { 0.2f, 0.5f, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f };
@@ -28,7 +27,6 @@ public class ArenaUIManager : MonoBehaviour
         cycleTankCameraButton.onClick.AddListener(OnCycleTankCamera);
         pauseButton.onClick.AddListener(PauseGame);
         resumeButton.onClick.AddListener(ResumeGame);
-        returnToWorkshopButton.onClick.AddListener(ReturnToWorkshop);
         settingsButton.onClick.AddListener(OpenSettings);
 
         speedSlider.minValue = 0;
@@ -75,7 +73,7 @@ public class ArenaUIManager : MonoBehaviour
         pauseOverlay.SetActive(false);
     }
 
-    void ReturnToWorkshop()
+    public void ReturnToWorkshop()
     {
         UnityEngine.SceneManagement.SceneManager.LoadScene("Shop");
     }

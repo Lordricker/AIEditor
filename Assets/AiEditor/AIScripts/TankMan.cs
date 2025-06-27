@@ -34,11 +34,9 @@ public class TankMan : MonoBehaviour
     [SerializeField] private string tankTag = "Tank";
     
     // Team-based detection support
-    private TankTeamInfo myTeamInfo;
-    
-    [Header("Projectile Settings")]
-    [SerializeField] private GameObject projectilePrefab;
-    [SerializeField] private float projectileSpeed = 20f;
+    private TankTeamInfo myTeamInfo;    [Header("Projectile Settings")]
+    [SerializeField] private GameObject bulletPrefab; // Universal bullet prefab for all tanks
+    [SerializeField] private float bulletSpeed = 50f; // Speed from turret data
     
     [Header("Calculated Stats - Read Only")]
     [SerializeField] private float totalWeight;
@@ -52,6 +50,7 @@ public class TankMan : MonoBehaviour
     [SerializeField] private float visionRange;
     [SerializeField] private float currentHealth;
     [SerializeField] private float armor;
+    [SerializeField] private TurretType turretType = TurretType.DirectFire;
     
     [Header("Assigned AI Components")]
     [SerializeField] private AiTreeAsset assignedNavAI;
@@ -125,9 +124,7 @@ public class TankMan : MonoBehaviour
         
         // Assign the AI components from tankSlotData for display/reference
         assignedNavAI = tankSlotData != null ? tankSlotData.navAI : null;
-        assignedTurretAI = tankSlotData != null ? tankSlotData.turretAI : null;
-        
-        // Initialize wander origin point
+        assignedTurretAI = tankSlotData != null ? tankSlotData.turretAI : null;        // Initialize wander origin point
         wanderOrigin = transform.position;
         
         CalculateStats();
@@ -158,6 +155,11 @@ public class TankMan : MonoBehaviour
         if (tankSlotData != null)
         {
             myTeamInfo.teamId = tankSlotData.teamId;
+            Debug.Log($"[TankMan] *** {gameObject.name} TEAM SETUP *** Team ID: {myTeamInfo.teamId} (from TankSlotData)");
+        }
+        else
+        {
+            Debug.LogWarning($"[TankMan] {gameObject.name} has no TankSlotData - team ID not set!");
         }
     }
     
@@ -222,13 +224,17 @@ public class TankMan : MonoBehaviour
             armor = 0f;
         }
         
+        Debug.Log($"[TankMan] *** {gameObject.name} HP CALCULATION *** Base: 100, ArmorHP: {tankSlotData.armorHP}, Total: {totalHP}, Armor: {armor}");
+        
         // Get engine stats from TankSlotData stat fields
         enginePower = tankSlotData.enginePower > 0 ? tankSlotData.enginePower : 1; // Base engine power
         
         // Get turret stats from TankSlotData stat fields
+        turretType = tankSlotData.turretType;
         damage = tankSlotData.turretDamage;
         range = tankSlotData.turretRange;
         shotsPerSec = tankSlotData.turretShotsPerSec;
+        bulletSpeed = tankSlotData.turretBulletSpeed;
         knockback = tankSlotData.turretKnockback;
         visionCone = tankSlotData.turretVisionCone;
         visionRange = tankSlotData.turretVisionRange;
@@ -265,9 +271,7 @@ public class TankMan : MonoBehaviour
     public TankSlotData GetTankSlotData()
     {
         return tankSlotData;
-    }
-    
-    /// <summary>
+    }    /// <summary>
     /// Set the turret and fire point transforms (called by TankAssembly)
     /// </summary>
     public void SetTurretComponents(Transform turret, Transform firePointTransform)
@@ -276,6 +280,14 @@ public class TankMan : MonoBehaviour
         firePoint = firePointTransform;
     }
     
+    /// <summary>
+    /// Set the bullet prefab reference (called by TankAssembly)
+    /// </summary>
+    public void SetBulletPrefab(GameObject prefab)
+    {
+        bulletPrefab = prefab;
+    }
+
     #endregion
     
     #region AI System
@@ -386,7 +398,7 @@ public class TankMan : MonoBehaviour
                 return GetNextNodeFromAction(node, tree);
                 
             case AiNodeType.SubAI:
-                ExecuteSubAI(node);
+                ExecuteSubAI(node, tree);
                 return GetNextNodeFromAction(node, tree);
                 
             default:
@@ -414,14 +426,36 @@ public class TankMan : MonoBehaviour
         
         if (conditionResult)
         {
-            // Condition passed - follow to first connected node (highest Y-position)
+            // Special handling for turret AI: Try Fire first, fallback to CenterTarget
+            if (conditionNode.methodName == "IfEnemy" && sortedConnections.Count >= 2)
+            {
+                var fireNode = sortedConnections.FirstOrDefault(n => n.methodName == "Fire");
+                var centerNode = sortedConnections.FirstOrDefault(n => n.methodName == "CenterTarget");
+                
+                if (fireNode != null && centerNode != null)
+                {
+                    // Check if we can fire (turret aimed within 2 degrees)
+                    if (CanFire())
+                    {
+                        Debug.Log($"[TankMan] IfEnemy true - executing Fire (turret aimed)");
+                        return fireNode;
+                    }
+                    else
+                    {
+                        Debug.Log($"[TankMan] IfEnemy true - executing CenterTarget (turret not aimed)");
+                        return centerNode;
+                    }
+                }
+            }
+            
+            // Default behavior: follow to first connected node (highest Y-position)
             var nextNode = sortedConnections.FirstOrDefault();
             return nextNode;
         }
         else
         {
-            // Condition failed - check if this node is connected directly from StartNavButton
-            bool isTopLevelNode = tree.connections.Any(c => c.fromNodeId == "StartNavButton" && c.toNodeId == conditionNode.nodeId);
+            // Condition failed - check if this node is connected directly from StartNavButton or StartTurretButton
+            bool isTopLevelNode = tree.connections.Any(c => (c.fromNodeId == "StartNavButton" || c.fromNodeId == "StartTurretButton") && c.toNodeId == conditionNode.nodeId);
             if (isTopLevelNode)
             {
                 return GetNextAlternativeFromStart(conditionNode, tree);
@@ -495,9 +529,7 @@ public class TankMan : MonoBehaviour
         
         // No connections - restart from beginning
         return GetFirstNodeFromStart(tree);
-    }
-    
-    /// <summary>
+    }    /// <summary>
     /// Updates sensor data for decision making
     /// </summary>
     void UpdateSensorData()
@@ -516,9 +548,15 @@ public class TankMan : MonoBehaviour
             {
                 continue;
             }
-            
-            // Only detect objects that have TankTeamInfo (tanks)
+              // Only detect objects that have TankTeamInfo (tanks)
             TankTeamInfo otherTeamInfo = collider.GetComponent<TankTeamInfo>();
+            
+            // If no TankTeamInfo on the collider, check the parent (tank parts like engine, turret, armor)
+            if (otherTeamInfo == null)
+            {
+                otherTeamInfo = collider.GetComponentInParent<TankTeamInfo>();
+            }
+            
             if (otherTeamInfo == null)
             {
                 continue; // Skip objects without team info (not tanks)
@@ -545,7 +583,22 @@ public class TankMan : MonoBehaviour
             // Add to appropriate lists based on team and vision
             if (isEnemy && inVisionCone)
             {
-                detectedEnemies.Add(collider.gameObject);
+                // Check if enemy tank is alive before adding to detected enemies
+                TankMan enemyTankMan = collider.GetComponent<TankMan>();
+                if (enemyTankMan == null)
+                {
+                    enemyTankMan = collider.GetComponentInParent<TankMan>();
+                }
+                
+                if (enemyTankMan != null && enemyTankMan.CurrentHealth > 0)
+                {
+                    detectedEnemies.Add(collider.gameObject);
+                }
+                else if (enemyTankMan != null)
+                {
+                    // Debug log for dead tank detection (optional)
+                    Debug.Log($"[TankMan] Ignoring dead enemy tank {collider.gameObject.name} (HP: {enemyTankMan.CurrentHealth})");
+                }
             }
             else if (isAlly && inVisionCone)
             {
@@ -581,16 +634,26 @@ public class TankMan : MonoBehaviour
         {
             case "IfSelf":
                 result = currentTarget == gameObject;
-                break;
-                
-            case "IfEnemy":
+                break;            case "IfEnemy":
                 bool hasTarget = currentTarget != null;
                 bool targetIsEnemy = hasTarget && detectedEnemies.Contains(currentTarget);
                 result = hasTarget && targetIsEnemy;
                 
+                // Check if target is alive (ignore dead tanks)
                 if (hasTarget)
                 {
-                    var targetTeamInfo = currentTarget.GetComponent<TankTeamInfo>();
+                    TankMan targetTankMan = currentTarget.GetComponent<TankMan>();
+                    if (targetTankMan != null && targetTankMan.CurrentHealth <= 0)
+                    {
+                        result = false; // Don't target dead tanks
+                        Debug.Log($"[TankMan] IfEnemy: Ignoring dead tank {currentTarget.name} (HP: {targetTankMan.CurrentHealth})");
+                    }
+                }
+                
+                TankTeamInfo targetTeamInfo = null;
+                if (hasTarget && result) // Only check team if target is alive
+                {
+                    targetTeamInfo = currentTarget.GetComponent<TankTeamInfo>();
                     if (targetTeamInfo != null)
                     {
                         result = result && myTeamInfo.IsEnemy(targetTeamInfo);
@@ -741,11 +804,212 @@ public class TankMan : MonoBehaviour
     }
     
     /// <summary>
-    /// Executes SubAI nodes (placeholder for now)
+    /// Executes SubAI nodes by loading and running the referenced AI tree
     /// </summary>
-    void ExecuteSubAI(AiExecutableNode subAiNode)
+    void ExecuteSubAI(AiExecutableNode subAiNode, AiEditor.AiTreeAsset currentTree)
     {
-        // TODO: Implement SubAI execution by loading and running another AI tree
+        if (subAiNode == null || string.IsNullOrEmpty(subAiNode.originalLabel))
+        {
+            Debug.LogWarning("[TankMan] SubAI node has no label to reference AI file");
+            return;
+        }
+        
+        // The SubAI node's originalLabel contains the name of the AI file to load
+        string referencedAIName = subAiNode.originalLabel.Trim();
+        
+        // Load the referenced AI tree asset
+        AiEditor.AiTreeAsset referencedAI = LoadSubAITree(referencedAIName, subAiNode, currentTree);
+        if (referencedAI == null)
+        {
+            Debug.LogWarning($"[TankMan] Could not load referenced SubAI: {referencedAIName}");
+            return;
+        }
+        
+        // Execute the referenced AI tree based on its branch type
+        if (referencedAI.branchType == AiEditor.AiBranchType.Nav)
+        {
+            // Execute as navigation AI - find the start node and begin execution
+            if (!string.IsNullOrEmpty(referencedAI.startNodeId))
+            {
+                var startNode = referencedAI.executableNodes.Find(n => n.nodeId == referencedAI.startNodeId);
+                if (startNode != null)
+                {
+                    ExecuteSubAIChain(startNode, referencedAI);
+                }
+            }
+        }
+        else if (referencedAI.branchType == AiEditor.AiBranchType.Turret)
+        {
+            // Execute as turret AI - find the start node and begin execution
+            if (!string.IsNullOrEmpty(referencedAI.startNodeId))
+            {
+                var startNode = referencedAI.executableNodes.Find(n => n.nodeId == referencedAI.startNodeId);
+                if (startNode != null)
+                {
+                    ExecuteSubAIChain(startNode, referencedAI);
+                }
+            }
+        }
+        
+        Debug.Log($"[TankMan] Executed SubAI: {referencedAIName} (branch: {referencedAI.branchType})");
+    }
+    
+    /// <summary>
+    /// Loads a SubAI tree asset based on the name and context
+    /// </summary>
+    AiEditor.AiTreeAsset LoadSubAITree(string aiName, AiExecutableNode subAiNode, AiEditor.AiTreeAsset currentTree)
+    {
+        Debug.Log($"[TankMan] LoadSubAITree: Looking for '{aiName}'");
+        
+#if UNITY_EDITOR
+        // Determine which folder to search based on the current AI tree context
+        string folderPath = "";
+        
+        // Check the current tree's branch type to determine the folder
+        if (currentTree.branchType == AiEditor.AiBranchType.Nav)
+        {
+            folderPath = "Assets/AiEditor/AISaveFiles/NavFiles/";
+            Debug.Log($"[TankMan] Current tree is Nav, searching in: {folderPath}");
+        }
+        else if (currentTree.branchType == AiEditor.AiBranchType.Turret)
+        {
+            folderPath = "Assets/AiEditor/AISaveFiles/TurretFiles/";
+            Debug.Log($"[TankMan] Current tree is Turret, searching in: {folderPath}");
+        }
+        else
+        {
+            // Fallback: try both folders
+            string[] foldersToTry = {
+                "Assets/AiEditor/AISaveFiles/TurretFiles/",
+                "Assets/AiEditor/AISaveFiles/NavFiles/",
+                "Assets/AiEditor/AISaveFiles/"
+            };
+            
+            Debug.Log($"[TankMan] No specific context, trying multiple folders");
+            foreach (string folder in foldersToTry)
+            {
+                Debug.Log($"[TankMan] Searching in folder: {folder}");
+                var result = SearchForAIInFolder(aiName, folder);
+                if (result != null) 
+                {
+                    Debug.Log($"[TankMan] Found '{aiName}' in {folder}");
+                    return result;
+                }
+            }
+            Debug.LogWarning($"[TankMan] Could not find '{aiName}' in any folder");
+            return null;
+        }
+        
+        var foundAsset = SearchForAIInFolder(aiName, folderPath);
+        if (foundAsset != null)
+        {
+            Debug.Log($"[TankMan] Found '{aiName}' in {folderPath}");
+        }
+        else
+        {
+            Debug.LogWarning($"[TankMan] Could not find '{aiName}' in {folderPath}");
+        }
+        return foundAsset;
+#else
+        Debug.LogWarning("[TankMan] SubAI loading is only supported in editor mode");
+        return null;
+#endif
+    }
+    
+#if UNITY_EDITOR
+    /// <summary>
+    /// Searches for an AI asset in a specific folder
+    /// </summary>
+    AiEditor.AiTreeAsset SearchForAIInFolder(string aiName, string folderPath)
+    {
+        Debug.Log($"[TankMan] SearchForAIInFolder: Looking for '{aiName}' in '{folderPath}'");
+        
+        if (!System.IO.Directory.Exists(folderPath))
+        {
+            Debug.LogWarning($"[TankMan] Directory does not exist: {folderPath}");
+            return null;
+        }
+            
+        string[] files = System.IO.Directory.GetFiles(folderPath, "*.asset");
+        Debug.Log($"[TankMan] Found {files.Length} .asset files in {folderPath}");
+        
+        foreach (string filePath in files)
+        {
+            Debug.Log($"[TankMan] Checking file: {filePath}");
+            var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiEditor.AiTreeAsset>(filePath);
+            if (asset != null)
+            {
+                Debug.Log($"[TankMan] Loaded asset: TreeName='{asset.TreeName}', title='{asset.title}', filename='{System.IO.Path.GetFileNameWithoutExtension(filePath)}'");
+                
+                if ((!string.IsNullOrEmpty(asset.TreeName) && asset.TreeName.Equals(aiName, System.StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(asset.title) && asset.title.Equals(aiName, System.StringComparison.OrdinalIgnoreCase)) ||
+                    System.IO.Path.GetFileNameWithoutExtension(filePath).Equals(aiName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.Log($"[TankMan] Match found! Returning asset: {asset.TreeName ?? asset.title ?? "Unnamed"}");
+                    return asset;
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[TankMan] Failed to load asset at: {filePath}");
+            }
+        }
+        
+        Debug.LogWarning($"[TankMan] No matching asset found for '{aiName}' in '{folderPath}'");
+        return null;
+    }
+#endif
+    
+    /// <summary>
+    /// Executes a chain of SubAI nodes from the referenced AI tree
+    /// </summary>
+    void ExecuteSubAIChain(AiExecutableNode startNode, AiEditor.AiTreeAsset referencedAI)
+    {
+        AiExecutableNode currentNode = startNode;
+        int maxSteps = 100; // Prevent infinite loops
+        int steps = 0;
+        
+        while (currentNode != null && steps < maxSteps)
+        {
+            steps++;
+            
+            // Execute the current node using the same logic as the main AI execution
+            switch (currentNode.nodeType)
+            {
+                case AiEditor.AiNodeType.Condition:
+                    bool conditionResult = ExecuteCondition(currentNode);
+                    currentNode = GetNextNodeFromCondition(currentNode, referencedAI, conditionResult);
+                    break;
+                    
+                case AiEditor.AiNodeType.Action:
+                    ExecuteAction(currentNode);
+                    currentNode = GetNextNodeFromAction(currentNode, referencedAI);
+                    break;
+                    
+                case AiEditor.AiNodeType.SubAI:
+                    // Recursive SubAI execution (with depth limit)
+                    ExecuteSubAI(currentNode, referencedAI);
+                    currentNode = GetNextNodeFromAction(currentNode, referencedAI);
+                    break;
+                    
+                default:
+                    // Move to next connected node
+                    if (currentNode.connectedNodeIds.Count > 0)
+                    {
+                        currentNode = referencedAI.executableNodes.Find(n => n.nodeId == currentNode.connectedNodeIds[0]);
+                    }
+                    else
+                    {
+                        currentNode = null;
+                    }
+                    break;
+            }
+        }
+        
+        if (steps >= maxSteps)
+        {
+            Debug.LogWarning($"[TankMan] SubAI execution reached maximum steps limit: {referencedAI.TreeName}");
+        }
     }
     
     #endregion
@@ -754,53 +1018,174 @@ public class TankMan : MonoBehaviour
     
     bool CanFire()
     {
-        return currentTarget != null && 
-               Time.time - lastFireTime >= (1f / shotsPerSec) &&
-               Vector3.Distance(transform.position, currentTarget.transform.position) <= range;
-    }
-    
-    void Fire()
-    {
-        if (currentTarget == null || firePoint == null) return;
-        
-        lastFireTime = Time.time;
-        
-        // Simple firing - instantiate projectile if prefab exists
-        if (projectilePrefab != null)
+        if (currentTarget == null || 
+            Time.time - lastFireTime < (1f / shotsPerSec) ||
+            Vector3.Distance(transform.position, currentTarget.transform.position) > range)
         {
-            Vector3 direction = (currentTarget.transform.position - firePoint.position).normalized;
-            GameObject projectile = Instantiate(projectilePrefab, firePoint.position, Quaternion.LookRotation(direction));
+            return false;
+        }
+        
+        // Check if turret is pointing at target within 2 degrees
+        if (turretTransform != null)
+        {
+            Vector3 turretForward = turretTransform.forward;
+            Vector3 directionToTarget = (currentTarget.transform.position - turretTransform.position).normalized;
+            float angleToTarget = Vector3.Angle(turretForward, directionToTarget);
             
-            // Give projectile some velocity if it has a Rigidbody
-            Rigidbody projRb = projectile.GetComponent<Rigidbody>();
-            if (projRb != null)
+            // Only fire if turret is pointing within 2 degrees of target
+            if (angleToTarget > 2f)
             {
-                projRb.linearVelocity = direction * projectileSpeed;
+                return false;
             }
         }
         
-        Debug.Log($"[TankMan] Fired at {currentTarget.name}");
+        return true;
+    }    void Fire()
+    {
+        if (currentTarget == null)
+        {
+            Debug.LogWarning("[TankMan] Fire() called but no current target!");
+            return;
+        }
+        
+        if (firePoint == null)
+        {
+            Debug.LogWarning($"[TankMan] Fire() called but firePoint is null for {gameObject.name}! Check turret prefab for FirePoint GameObject.");
+            return;
+        }
+        
+        lastFireTime = Time.time;
+        
+        // Simple firing - instantiate bullet if prefab exists
+        if (bulletPrefab != null)
+        {
+            Vector3 direction;
+            float launchAngle = 0f;
+            
+            // Calculate firing direction based on turret type
+            if (turretType == TurretType.Artillery)
+            {
+                // Artillery: Calculate ballistic trajectory
+                direction = CalculateArtilleryDirection(out launchAngle);
+            }
+            else
+            {
+                // Direct fire: Straight line to target
+                direction = (currentTarget.transform.position - firePoint.position).normalized;
+            }
+            
+            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.LookRotation(direction));
+            
+            // Give bullet velocity based on turret's bullet speed
+            Rigidbody bulletRb = bullet.GetComponent<Rigidbody>();
+            if (bulletRb != null)
+            {
+                // Configure physics based on turret type
+                if (turretType == TurretType.Artillery)
+                {
+                    bulletRb.useGravity = true;
+                    // Apply velocity with calculated launch angle
+                    Vector3 horizontalDirection = Vector3.ProjectOnPlane(direction, Vector3.up).normalized;
+                    Vector3 launchVelocity = Quaternion.AngleAxis(launchAngle, Vector3.Cross(horizontalDirection, Vector3.up)) * horizontalDirection * bulletSpeed;
+                    bulletRb.linearVelocity = launchVelocity;
+                }
+                else
+                {
+                    bulletRb.useGravity = false;
+                    bulletRb.linearVelocity = direction * bulletSpeed;
+                }
+            }
+            
+            // Pass combat stats to bullet
+            BulletScript bulletScript = bullet.GetComponent<BulletScript>();
+            if (bulletScript != null)
+            {
+                bulletScript.Initialize(damage, range, myTeamInfo.teamId, turretType == TurretType.Artillery);
+                Debug.Log($"[TankMan] *** {gameObject.name} FIRING *** Damage: {damage}, Range: {range}, Team: {myTeamInfo.teamId}, Artillery: {turretType == TurretType.Artillery}");
+            }
+            else
+            {
+                Debug.LogWarning("[TankMan] Bullet prefab missing BulletScript component!");
+            }
+        }
+        
+        Debug.Log($"[TankMan] Fired {turretType} shot at {currentTarget.name}");
+    }
+    
+    /// <summary>
+    /// Calculates artillery firing direction with ballistic trajectory
+    /// </summary>
+    Vector3 CalculateArtilleryDirection(out float launchAngle)
+    {
+        Vector3 targetPos = currentTarget.transform.position;
+        Vector3 firePos = firePoint.position;
+        
+        // Calculate horizontal distance and height difference
+        Vector3 horizontalDisplacement = Vector3.ProjectOnPlane(targetPos - firePos, Vector3.up);
+        float horizontalDistance = horizontalDisplacement.magnitude;
+        float heightDifference = targetPos.y - firePos.y;
+        
+        // Use ballistic formula to calculate optimal launch angle
+        // For maximum range with given velocity: angle = 45°
+        // For hitting specific target: use ballistic trajectory calculation
+        float gravity = Physics.gravity.magnitude;
+        float velocitySquared = bulletSpeed * bulletSpeed;
+        
+        // Calculate launch angle using ballistic formula
+        // Using the quadratic formula solution for trajectory
+        float discriminant = velocitySquared * velocitySquared - gravity * (gravity * horizontalDistance * horizontalDistance + 2 * heightDifference * velocitySquared);
+        
+        if (discriminant >= 0)
+        {
+            // Two possible angles - use the lower one for direct fire
+            float angle1 = Mathf.Atan((velocitySquared - Mathf.Sqrt(discriminant)) / (gravity * horizontalDistance));
+            float angle2 = Mathf.Atan((velocitySquared + Mathf.Sqrt(discriminant)) / (gravity * horizontalDistance));
+            
+            // Use lower angle for more direct trajectory, higher angle for artillery arc
+            launchAngle = Mathf.Rad2Deg * angle2; // Use high arc for artillery
+            launchAngle = Mathf.Clamp(launchAngle, 15f, 75f); // Reasonable artillery angles
+        }
+        else
+        {
+            // Target too far - use 45° for maximum distance
+            launchAngle = 45f;
+        }
+        
+        // Return horizontal direction (angle will be applied to this)
+        return horizontalDisplacement.normalized;
     }
     
     public void TakeDamage(float damageAmount)
     {
+        Debug.Log($"[TankMan] {gameObject.name} taking damage: {damageAmount} (current health: {currentHealth})");
+        
         // Apply armor reduction
         float finalDamage = Mathf.Max(0, damageAmount - armor);
         currentHealth -= finalDamage;
         
-        Debug.Log($"[TankMan] {gameObject.name} took {finalDamage} damage (original: {damageAmount}, armor: {armor}). Health: {currentHealth}/{totalHP}");
+        Debug.Log($"[TankMan] *** {gameObject.name} took {finalDamage} damage (original: {damageAmount}, armor: {armor}). Health: {currentHealth}/{totalHP} ***");
         
         if (currentHealth <= 0)
         {
             Die();
         }
-    }
-    
-    void Die()
+    }    void Die()
     {
         Debug.Log($"[TankMan] {gameObject.name} destroyed!");
         StopAI();
-        // TODO: Add death effects, cleanup, etc.
+        
+        // Disable movement
+        if (navAgent != null && navAgent.enabled)
+        {
+            navAgent.isStopped = true;
+            navAgent.enabled = false;
+        }
+        
+        // Disable the tank (but keep it for visual reference)
+        // You could add explosion effects, disable colliders, etc. here
+        enabled = false;
+        
+        // TODO: Add death effects, particle systems, sound, etc.
     }
     
     #endregion
@@ -1469,17 +1854,18 @@ public class TankMan : MonoBehaviour
     /// </summary>
     AiExecutableNode GetFirstNodeFromStart(AiTreeAsset tree)
     {
-        // Find all connections from StartNavButton
-        var startConnections = tree.nodes
-            .Where(n => n.nodeId == "StartNavButton")
-            .SelectMany(n => tree.connections
-                .Where(c => c.fromNodeId == "StartNavButton")
-                .Select(c => c.toNodeId))
+        // Check for both StartNavButton and StartTurretButton
+        string startButtonId = tree.connections.Any(c => c.fromNodeId == "StartNavButton") ? "StartNavButton" : "StartTurretButton";
+        
+        // Find all connections from start button
+        var startConnections = tree.connections
+            .Where(c => c.fromNodeId == startButtonId)
+            .Select(c => c.toNodeId)
             .ToList();
 
         if (startConnections.Count == 0)
         {
-            // Fallback to old method if no StartNavButton connections found
+            // Fallback to old method if no start button connections found
             return tree.executableNodes.Find(n => n.nodeId == tree.startNodeId);
         }
 
@@ -1497,9 +1883,12 @@ public class TankMan : MonoBehaviour
     /// </summary>
     AiExecutableNode GetNextAlternativeFromStart(AiExecutableNode failedNode, AiTreeAsset tree)
     {
-        // Find all connections from StartNavButton
+        // Check for both StartNavButton and StartTurretButton
+        string startButtonId = tree.connections.Any(c => c.fromNodeId == "StartNavButton") ? "StartNavButton" : "StartTurretButton";
+        
+        // Find all connections from start button
         var startConnections = tree.connections
-            .Where(c => c.fromNodeId == "StartNavButton")
+            .Where(c => c.fromNodeId == startButtonId)
             .Select(c => c.toNodeId)
             .ToList();
 
@@ -1514,10 +1903,11 @@ public class TankMan : MonoBehaviour
         int failedIndex = connectedNodes.FindIndex(n => n.nodeId == failedNode.nodeId);
         if (failedIndex >= 0 && failedIndex + 1 < connectedNodes.Count)
         {
-            var nextNode = connectedNodes[failedIndex + 1];            // ...existing code...
+            var nextNode = connectedNodes[failedIndex + 1];
             return nextNode;
         }
 
-        Debug.Log($"[TankMan] No more alternatives from StartNavButton, restarting");
+        Debug.Log($"[TankMan] No more alternatives from {startButtonId}, restarting");
         return connectedNodes.FirstOrDefault(); // Restart from first node
-    }}
+    }
+}

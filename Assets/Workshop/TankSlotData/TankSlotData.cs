@@ -23,9 +23,11 @@ public class TankSlotData : ScriptableObject
     
     // Component stats - stored directly to avoid ScriptableObject reference issues
     [Header("Turret Stats")]
+    public TurretType turretType = TurretType.DirectFire;
     public int turretDamage;
     public float turretRange;
     public float turretShotsPerSec;
+    public float turretBulletSpeed = 50f;
     public string turretKnockback;
     public float turretVisionRange = 60f;
     public float turretVisionCone = 45f;
