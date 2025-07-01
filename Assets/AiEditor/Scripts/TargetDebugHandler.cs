@@ -76,17 +76,32 @@ public class TargetDebugHandler : MonoBehaviour
                       nodeText.Contains("if any");        // Check for condition nodes (things that need targets)
         // Any node that starts with "if" but is NOT a target node is a condition node
         // Also include nodes with common condition keywords
-        isConditionNode = (nodeText.StartsWith("if") && !isTargetNode) ||
+        // EXCLUDE self conditions as they don't need targets
+        bool isSelfCondition = nodeText.Contains("if self") || 
+                              nodeText.Contains("ifself") ||
+                              nodeText.Contains("self hp") ||
+                              nodeText.Contains("self ammo") ||
+                              nodeText.Contains("self damaged") ||
+                              nodeText.Contains("self reloading");
+        
+        isConditionNode = ((nodeText.StartsWith("if") && !isTargetNode && !isSelfCondition) ||
                          nodeText.Contains("condition") ||
                          nodeText.Contains("check") ||
                          nodeText.Contains("when") ||
-                         nodeText.Contains("has ") ||
-                         nodeText.Contains("hp") ||
-                         nodeText.Contains("armor") ||
-                         nodeText.Contains("range") ||
-                         nodeText.Contains("rifle") ||
-                         nodeText.Contains("weapon") ||
-                         nodeText.Contains("tag");
+                         nodeText.Contains("has ")) &&
+                         !isSelfCondition; // Exclude self conditions
+        
+        // For HP, armor, range, etc. - only consider them condition nodes if they're NOT self conditions
+        if (!isSelfCondition)
+        {
+            isConditionNode = isConditionNode ||
+                             nodeText.Contains("hp") ||
+                             nodeText.Contains("armor") ||
+                             nodeText.Contains("range") ||
+                             nodeText.Contains("rifle") ||
+                             nodeText.Contains("weapon") ||
+                             nodeText.Contains("tag");
+        }
           if (isTargetNode)
         {
             hasTargetFlag = true;

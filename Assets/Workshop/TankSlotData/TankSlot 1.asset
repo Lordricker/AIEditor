@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 740ec3c473eeccd4ebed021fa2aa7a40, type: 3}
+  m_Name: TankSlot 1
+  m_EditorClassIdentifier: 
+  isActive: 0
+  teamId: 0
+  isPlayerControlled: 1
+  displayName: 
+  turretPrefab: {fileID: 3704434931606161932, guid: dc7582a3f117593469e8d4f4f5624cac, type: 3}
+  armorPrefab: {fileID: 1316712241508069579, guid: 25200d0eb4865bd40888054547fedd0e, type: 3}
+  engineFramePrefab: {fileID: 3813114062362436018, guid: faafdb4b5d255354cb37e2af4c6ce1fc, type: 3}
+  turretAI: {fileID: 0}
+  navAI: {fileID: 11400000, guid: fc98869d8537ef24f86bb90ead64f113, type: 2}
+  turretType: 0
+  turretDamage: 10
+  turretRange: 100
+  turretShotsPerSec: 1
+  turretBulletSpeed: 50
+  turretKnockback: Low
+  turretVisionRange: 100
+  turretVisionCone: 45
+  armorHP: 20
+  engineWeightCapacity: 40
+  enginePower: 25
+  totalWeight: 23
+  engineFrameInstanceId: Heavy Engine_d51cd824-160a-47f1-b52e-506e58a5aaf1
+  armorInstanceId: Light Plate_20ff3081-f65b-445b-8a89-97336ad6d3f9
+  turretInstanceId: Rifle_e5c5a972-bf11-4184-8f0f-4bff2c39413b
+  turretAIInstanceId: Ferdinand_35571657-8834-4555-91a6-dcaa2bf0a670
+  navAIInstanceId: Traveler_2c19f860-9ef7-4101-9b37-17b6c2a5fd4c
+  engineFrameColor: {r: 1, g: 1, b: 1, a: 1}
+  armorColor: {r: 0.33374763, g: 1, b: 0, a: 1}
+  turretColor: {r: 0.14916563, g: 1, b: 0, a: 1}

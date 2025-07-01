@@ -12,15 +12,64 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 644b83c0a12cafe4b90e46db268763f8, type: 3}
   m_Name: Ferdinand
   m_EditorClassIdentifier: 
+  title: Ferdinand
+  description: AI behavior tree for Turret control
+  cost: 100
+  weight: 1
+  modelPrefab: {fileID: 0}
+  category: 2
+  instanceId: Ferdinand_35571657-8834-4555-91a6-dcaa2bf0a670
+  customColor: {r: 1, g: 1, b: 1, a: 1}
   branchType: 1
   nodes:
-  - nodeId: f0069b7d-f280-4b55-b35c-4d033f5deb1a
+  - nodeId: b9406aa9-d16b-40de-b0f8-b5d62b2a30ed
+    nodeType: MiddleNode(Clone)
+    nodeLabel: If Enemy
+    position: {x: -2208, y: 16}
+  - nodeId: 155447a5-476b-4cd8-a0d3-968ca5f33c0e
+    nodeType: EndNode(Clone)
+    nodeLabel: Center Target
+    position: {x: -1824, y: 32}
+  - nodeId: 48368977-1590-4e37-bfdc-70d7666bd1cd
     nodeType: EndNode(Clone)
     nodeLabel: Fire
-    position: {x: -1952, y: 112}
+    position: {x: -1824, y: 80}
   connections:
   - fromNodeId: StartTurretButton
     fromPortId: TurretOrigin
-    toNodeId: f0069b7d-f280-4b55-b35c-4d033f5deb1a
+    toNodeId: b9406aa9-d16b-40de-b0f8-b5d62b2a30ed
     toPortId: Input
+  - fromNodeId: b9406aa9-d16b-40de-b0f8-b5d62b2a30ed
+    fromPortId: Output
+    toNodeId: 155447a5-476b-4cd8-a0d3-968ca5f33c0e
+    toPortId: Input
+  - fromNodeId: b9406aa9-d16b-40de-b0f8-b5d62b2a30ed
+    fromPortId: Output
+    toNodeId: 48368977-1590-4e37-bfdc-70d7666bd1cd
+    toPortId: Input
+  executableNodes:
+  - nodeId: b9406aa9-d16b-40de-b0f8-b5d62b2a30ed
+    methodName: IfEnemy
+    originalLabel: If Enemy
+    nodeType: 1
+    numericValue: 0
+    connectedNodeIds:
+    - 155447a5-476b-4cd8-a0d3-968ca5f33c0e
+    - 48368977-1590-4e37-bfdc-70d7666bd1cd
+    position: {x: -2208, y: 16}
+  - nodeId: 155447a5-476b-4cd8-a0d3-968ca5f33c0e
+    methodName: CenterTarget
+    originalLabel: Center Target
+    nodeType: 2
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -1824, y: 32}
+  - nodeId: 48368977-1590-4e37-bfdc-70d7666bd1cd
+    methodName: Fire
+    originalLabel: Fire
+    nodeType: 2
+    numericValue: 0
+    connectedNodeIds: []
+    position: {x: -1824, y: 80}
+  startNodeId: b9406aa9-d16b-40de-b0f8-b5d62b2a30ed
   treeName: Ferdinand

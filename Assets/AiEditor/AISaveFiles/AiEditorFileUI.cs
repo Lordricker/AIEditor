@@ -41,6 +41,7 @@ public class AiEditorFileUI : MonoBehaviour
     {
         saveButton.onClick.AddListener(OnSaveClicked);
         loadButton.onClick.AddListener(ToggleLoadPanel);
+        
         turretBranchButton.onClick.AddListener(() => ShowFilePanel(turretFileScrollView, turretFileContent, turretFolder));
         navBranchButton.onClick.AddListener(() => ShowFilePanel(navFileScrollView, navFileContent, navFolder));
         loadPanel.SetActive(false);
@@ -57,7 +58,7 @@ public class AiEditorFileUI : MonoBehaviour
             turretFileScrollView.SetActive(false);
         }
     }
-
+    
     void OnSaveClicked()
     {
         // Determine branch by which start button is active
@@ -71,25 +72,19 @@ public class AiEditorFileUI : MonoBehaviour
         if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
 
         // Get the filename from the starting node's label (replace spaces with _)
-        // Always get the tree name from the FileName field if set, otherwise fallback to FileNameText under StartNodePanel
+        // Always get the tree name from FileButtonPanel first, then fallback to FileName field
         string treeName = "NewAI";
-        if (FileName != null && !string.IsNullOrEmpty(FileName.text))
+        
+        // PRIORITY 1: Get from FileButtonPanel (the primary display location)
+        string currentTreeName = GetCurrentTreeName();
+        if (!string.IsNullOrEmpty(currentTreeName))
+        {
+            treeName = currentTreeName;
+        }
+        // PRIORITY 2: Fallback to FileName field if FileButtonPanel is empty
+        else if (FileName != null && !string.IsNullOrEmpty(FileName.text))
         {
             treeName = FileName.text;
-        }
-        else
-        {
-            var startNodePanel = GameObject.Find("StartNodePanel");
-            if (startNodePanel != null)
-            {
-                var fileNameText = startNodePanel.transform.Find("FileNameText");
-                if (fileNameText != null)
-                {
-                    var tmp = fileNameText.GetComponent<TMPro.TMP_Text>();
-                    if (tmp != null && !string.IsNullOrEmpty(tmp.text))
-                        treeName = tmp.text;
-                }
-            }
         }
         string assetName = treeName.Replace(' ', '_');
         // Only allow updating an existing file
@@ -99,8 +94,14 @@ public class AiEditorFileUI : MonoBehaviour
             var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiTreeAsset>(currentAssetPath);
             if (asset != null)
             {
-                asset.treeName = treeName;
+                asset.TreeName = treeName;
                 asset.branchType = (folder == navFolder) ? AiEditor.AiBranchType.Nav : AiEditor.AiBranchType.Turret;
+                
+                // Ensure instanceId is set for existing asset (preserve existing or generate new if missing)
+                if (string.IsNullOrEmpty(asset.instanceId))
+                {
+                    asset.instanceId = asset.title + "_" + System.Guid.NewGuid().ToString();
+                }
                 // --- Serialize nodes and connections ---
                 var content = GameObject.Find("Content");
                 var nodeDraggables = content.GetComponentsInChildren<NodeDraggable>();
@@ -215,8 +216,11 @@ public class AiEditorFileUI : MonoBehaviour
             #if UNITY_EDITOR
             var asset = ScriptableObject.CreateInstance<AiTreeAsset>();
             asset.name = assetName;
-            asset.treeName = treeName;
+            asset.TreeName = treeName;
             asset.branchType = (folder == navFolder) ? AiEditor.AiBranchType.Nav : AiEditor.AiBranchType.Turret;
+            
+            // Generate instanceId for new asset
+            asset.instanceId = asset.title + "_" + System.Guid.NewGuid().ToString();
             // --- Serialize nodes and connections ---
             var content = GameObject.Find("Content");
             var nodeDraggables = content.GetComponentsInChildren<NodeDraggable>();
@@ -270,10 +274,80 @@ public class AiEditorFileUI : MonoBehaviour
         }
     }
 
-    // Helper to get the label from the starting node (FileNameText under StartNodePanel)
+    // Helper to get the current tree name from FileButtonPanel
+    string GetCurrentTreeName()
+    {
+        // Look for UICanvas>FileButtonPanel>FileNameText
+        var uiCanvas = GameObject.Find("UICanvas");
+        if (uiCanvas != null)
+        {
+            var fileButtonPanel = uiCanvas.transform.Find("FileButtonPanel");
+            if (fileButtonPanel != null)
+            {
+                // Look for FileNameText specifically (not TitleName component)
+                var fileNameText = fileButtonPanel.transform.Find("FileNameText");
+                if (fileNameText != null)
+                {
+                    var tmpText = fileNameText.GetComponent<TMPro.TMP_Text>();
+                    if (tmpText != null && !string.IsNullOrEmpty(tmpText.text))
+                    {
+                        return tmpText.text;
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
+    // Helper to set the current tree name in FileButtonPanel
+    void SetCurrentTreeName(string treeName)
+    {
+        // Look for UICanvas>FileButtonPanel>FileNameText
+        var uiCanvas = GameObject.Find("UICanvas");
+        if (uiCanvas != null)
+        {
+            var fileButtonPanel = uiCanvas.transform.Find("FileButtonPanel");
+            if (fileButtonPanel != null)
+            {
+                // Look for FileNameText specifically
+                var fileNameText = fileButtonPanel.transform.Find("FileNameText");
+                if (fileNameText != null)
+                {
+                    var tmpText = fileNameText.GetComponent<TMPro.TMP_Text>();
+                    if (tmpText != null)
+                    {
+                        tmpText.text = treeName;
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // Fallback: Try to set in old location for backwards compatibility
+        var startNodePanel = GameObject.Find("StartNodePanel");
+        if (startNodePanel != null)
+        {
+            var fileNameTextObj = startNodePanel.transform.Find("FileNameText");
+            if (fileNameTextObj != null)
+            {
+                var tmp = fileNameTextObj.GetComponent<TMPro.TMP_Text>();
+                if (tmp != null)
+                {
+                    tmp.text = treeName;
+                }
+            }
+        }
+    }
+
+    // Helper to get the label from the starting node (LEGACY - keeping for backwards compatibility)
     string GetStartNodeLabel()
     {
-        // Find the StartNodePanel in the scene
+        // First try the new location
+        string treeName = GetCurrentTreeName();
+        if (!string.IsNullOrEmpty(treeName))
+            return treeName;
+            
+        // Fallback to old location for backwards compatibility
         var startNodePanel = GameObject.Find("StartNodePanel");
         if (startNodePanel != null)
         {
@@ -289,16 +363,39 @@ public class AiEditorFileUI : MonoBehaviour
         navFileScrollView.SetActive(false);
         turretFileScrollView.SetActive(false);
         scrollView.SetActive(true);
+        
         // Clear previous
         foreach (Transform child in contentPanel) Destroy(child.gameObject);
+        
         if (!Directory.Exists(Path.Combine("Assets", "AiEditor", "AISaveFiles", folder))) return;
+        
         var files = Directory.GetFiles(Path.Combine("Assets", "AiEditor", "AISaveFiles", folder), "*.asset").OrderBy(f => f).ToArray();
+        
         foreach (var file in files)
         {
             var btnObj = Instantiate(fileButtonPrefab, contentPanel);
             var btn = btnObj.GetComponent<Button>();
             var txt = btnObj.GetComponentInChildren<TMPro.TMP_Text>();
-            if (txt != null) txt.text = Path.GetFileNameWithoutExtension(file);
+            
+            if (txt != null) 
+            {
+                // Load the asset to get the proper title instead of using filename
+                string assetPath = file.Replace("\\", "/");
+#if UNITY_EDITOR
+                var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiTreeAsset>(assetPath);
+                if (asset != null && !string.IsNullOrEmpty(asset.TreeName))
+                {
+                    txt.text = asset.TreeName; // Use TreeName property which handles title/treeName fallback
+                }
+                else
+                {
+                    txt.text = Path.GetFileNameWithoutExtension(file); // Fallback to filename
+                }
+#else
+                txt.text = Path.GetFileNameWithoutExtension(file); // Fallback for runtime
+#endif
+            }
+            
             btn.onClick.AddListener(() => OnFileSelected(file));
         }
     }
@@ -311,11 +408,8 @@ public class AiEditorFileUI : MonoBehaviour
     var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<AiTreeAsset>(currentAssetPath);
     if (asset != null)
     {
-        // Set FileName field if present (ALWAYS, regardless of node loop)
-        if (FileName != null)
-        {
-            FileName.text = asset.treeName;            Debug.Log($"[AiEditorFileUI] (OnFileSelected) Set FileName.text to loaded treeName: {asset.treeName}");
-        }
+        // Sync all tree name fields when loading
+        SyncAllTreeNameFields(asset.TreeName);
         
         // Clear existing nodes and lines from the Content panel, except StartNodePanel
         var content = GameObject.Find("Content");
@@ -349,8 +443,6 @@ public class AiEditorFileUI : MonoBehaviour
                 
                 var navBtn = startPanel.transform.Find("StartNavButton");
                 if (navBtn != null) navBtn.gameObject.SetActive(true);
-                
-                Debug.Log("[AiEditorFileUI] Nav file loaded - activated StartNavButton, deactivated StartTurretButton");
             }
         }
         else if (asset.branchType == AiEditor.AiBranchType.Turret)
@@ -369,31 +461,29 @@ public class AiEditorFileUI : MonoBehaviour
                 
                 var turretBtn = startPanel.transform.Find("StartTurretButton");
                 if (turretBtn != null) turretBtn.gameObject.SetActive(true);
-                
-                Debug.Log("[AiEditorFileUI] Turret file loaded - activated StartTurretButton, deactivated StartNavButton");
             }
         }
 
+        // Load nodes and connections
+        LoadNodesFromAsset(asset, content, startPanel);
+        LoadConnectionsFromAsset(asset, content, startPanel);
+        
+        loadPanel.SetActive(false);
+    }
+    
+    void LoadNodesFromAsset(AiTreeAsset asset, GameObject content, GameObject startPanel)
+    {
         // --- NodeId-based mapping ---
         var nodeIdToGameObject = new Dictionary<string, GameObject>();
         // --- Handle StartNodePanel and all nodes ---
         foreach (var nodeData in asset.nodes)
         {
-            Debug.Log($"Loading node: type={nodeData.nodeType}, label={nodeData.nodeLabel}, nodeId={nodeData.nodeId}");
-            GameObject nodeGO = null;            if ((nodeData.nodeType == "Start" || nodeData.nodeLabel == asset.treeName) && startPanel != null)
+            GameObject nodeGO = null;            if ((nodeData.nodeType == "Start" || nodeData.nodeLabel == asset.TreeName) && startPanel != null)
             {
                 // Update StartNodePanel label and position
-                // Set FileNameText to asset.treeName
-                var fileNameTextObj = startPanel.transform.Find("FileNameText");
-                if (fileNameTextObj != null)
-                {
-                    var tmp = fileNameTextObj.GetComponent<TMPro.TMP_Text>();
-                    if (tmp != null)
-                    {
-                        tmp.text = asset.treeName;
-                        Debug.Log($"[AiEditorFileUI] Set FileNameText to loaded treeName: {asset.treeName}");
-                    }
-                }
+                // NEW: Set filename in FileButtonPanel using TitleName component
+                SetCurrentTreeName(asset.TreeName);
+                
                 var rect = startPanel.GetComponent<RectTransform>();
                 rect.anchoredPosition = nodeData.position;
                 var title = startPanel.GetComponentInChildren<TitleName>();
@@ -470,14 +560,9 @@ public class AiEditorFileUI : MonoBehaviour
                             // Always set the value from the save file, even if it's 0
                             string valueToSet = executableNode.numericValue.ToString();
                             inlineNumberInput.SetCurrentNumber(valueToSet);
-                            Debug.Log($"[AiEditorFileUI] Loaded number {executableNode.numericValue} for node {nodeData.nodeLabel}");
                             
                             // Ensure the value sticks by setting it again after a frame delay
                             StartCoroutine(VerifyNumberDisplayAfterDelay(inlineNumberInput, valueToSet, nodeData.nodeLabel));
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"[AiEditorFileUI] No executable node found for {nodeData.nodeId}");
                         }
                     }
                 }
@@ -486,12 +571,41 @@ public class AiEditorFileUI : MonoBehaviour
             // Register in map
             if (!string.IsNullOrEmpty(nodeData.nodeId) && nodeGO != null)
                 nodeIdToGameObject[nodeData.nodeId] = nodeGO;        }
+    }
+    
+    void LoadConnectionsFromAsset(AiTreeAsset asset, GameObject content, GameObject startPanel)
+    {
+        // --- Create nodeId mapping for connections ---
+        var nodeIdToGameObject = new Dictionary<string, GameObject>();
+        
+        // Add StartNodePanel to mapping
+        if (startPanel != null)
+        {
+            var startDraggable = startPanel.GetComponent<NodeDraggable>();
+            if (startDraggable != null && !string.IsNullOrEmpty(startDraggable.nodeId))
+            {
+                nodeIdToGameObject[startDraggable.nodeId] = startPanel;
+            }
+        }
+        
+        // Add all other nodes to mapping
+        var nodeDraggables = content.GetComponentsInChildren<NodeDraggable>();
+        foreach (var node in nodeDraggables)
+        {
+            if (!string.IsNullOrEmpty(node.nodeId) && node.gameObject != startPanel)
+            {
+                nodeIdToGameObject[node.nodeId] = node.gameObject;
+            }
+        }
+        
         // --- Recreate connections using nodeId mapping ---
         foreach (var conn in asset.connections)
         {
             // Special handling for StartNavButton/StartTurretButton as origin
             GameObject fromNode = null;
-            Button outputButton = null;            if (conn.fromNodeId == "StartNavButton")
+            Button outputButton = null;            
+            
+            if (conn.fromNodeId == "StartNavButton")
             {
                 if (startPanel != null)
                 {
@@ -500,7 +614,8 @@ public class AiEditorFileUI : MonoBehaviour
                         outputButton = navBtn.GetComponent<Button>();
                 }
                 fromNode = startPanel;
-            }else if (conn.fromNodeId == "StartTurretButton")
+            }
+            else if (conn.fromNodeId == "StartTurretButton")
             {
                 if (startPanel != null)
                 {
@@ -514,12 +629,15 @@ public class AiEditorFileUI : MonoBehaviour
             {
                 fromNode = nodeIdToGameObject[conn.fromNodeId];
             }
+            
             if (string.IsNullOrEmpty(conn.toNodeId) || !nodeIdToGameObject.ContainsKey(conn.toNodeId)) continue;
             var toNode = nodeIdToGameObject[conn.toNodeId];
+            
             // Find input port/button
             Button inputButton = null;
             foreach (var btn in toNode.GetComponentsInChildren<Button>())
                 if (btn.CompareTag("InputPort")) { inputButton = btn; break; }
+            
             // For non-origin, find output port/button
             if (outputButton == null && fromNode != null)
             {
@@ -534,10 +652,13 @@ public class AiEditorFileUI : MonoBehaviour
                         if (btn.CompareTag("OutputPort")) { outputButton = btn; break; }
                 }
             }
+            
             if (outputButton == null || inputButton == null) continue;
+            
             // Instantiate line using UILinePrefab
             var lineGO = Instantiate(UILinePrefab, content.transform);
             var lineRect = lineGO.GetComponent<RectTransform>();
+            
             // Set up UILineConnector
             var connector = lineGO.GetComponent<UILineConnector>();
             if (connector == null) connector = lineGO.AddComponent<UILineConnector>();
@@ -545,13 +666,17 @@ public class AiEditorFileUI : MonoBehaviour
             connector.inputRect = inputButton.GetComponent<RectTransform>();
             connector.canvas = content.GetComponentInParent<Canvas>();
             connector.UpdateLine();
+            
             // Add click-to-delete functionality
             if (lineGO.GetComponent<UILineClickDeleter>() == null)
                 lineGO.AddComponent<UILineClickDeleter>();
+            
             // Register with NodeDraggable for drag updates
             var fromDraggable = fromNode != null ? fromNode.GetComponent<NodeDraggable>() : null;
-            var toDraggable = toNode.GetComponent<NodeDraggable>();            if (fromDraggable != null) fromDraggable.RegisterConnectedLine(connector);
-            if (toDraggable != null) toDraggable.RegisterConnectedLine(connector);        }
+            var toDraggable = toNode.GetComponent<NodeDraggable>();            
+            if (fromDraggable != null) fromDraggable.RegisterConnectedLine(connector);
+            if (toDraggable != null) toDraggable.RegisterConnectedLine(connector);        
+        }
     }
 #endif
         loadPanel.SetActive(false);
@@ -579,7 +704,17 @@ public class AiEditorFileUI : MonoBehaviour
         {
             float numericValue = 0f;
             string methodName = AiEditor.AiMethodConverter.ConvertToMethodName(nodeData.nodeLabel, out numericValue);
-            AiEditor.AiNodeType nodeType = AiEditor.AiMethodConverter.DetermineNodeType(nodeData.nodeLabel);
+            
+            // Determine node type - check GameObject name first, then label content
+            AiEditor.AiNodeType nodeType;
+            if (nodeData.nodeType.Contains("SubAINode"))
+            {
+                nodeType = AiEditor.AiNodeType.SubAI;
+            }
+            else
+            {
+                nodeType = AiEditor.AiMethodConverter.DetermineNodeType(nodeData.nodeLabel);
+            }
             
             // Check if this node has a NumberInputButton with InlineNumberInput - extract the actual number
             var nodeGameObject = FindNodeGameObjectById(nodeData.nodeId);
@@ -595,7 +730,6 @@ public class AiEditorFileUI : MonoBehaviour
                         if (float.TryParse(currentNumberStr, out float parsedNumber))
                         {
                             numericValue = parsedNumber;
-                            Debug.Log($"[AiEditorFileUI] Extracted number {numericValue} from node {nodeData.nodeLabel}");
                         }
                     }
                 }
@@ -631,7 +765,6 @@ public class AiEditorFileUI : MonoBehaviour
             
             asset.executableNodes.Add(executableNode);
         }
-          Debug.Log($"[AiEditorFileUI] Generated execution data: {asset.executableNodes.Count} executable nodes, start: {asset.startNodeId}");
     }
     
     /// <summary>
@@ -665,13 +798,21 @@ public class AiEditorFileUI : MonoBehaviour
             string currentValue = input.GetCurrentNumber();
             if (currentValue != expectedValue)
             {
-                Debug.LogWarning($"[AiEditorFileUI] Number value mismatch for {nodeLabel}: expected {expectedValue}, got {currentValue}. Re-setting...");
                 input.SetCurrentNumber(expectedValue);
             }
-            else
-            {
-                Debug.Log($"[AiEditorFileUI] Number display verified for {nodeLabel}: {currentValue}");
-            }
+        }
+    }
+
+    // Helper to keep FileName field and FileButtonPanel in sync
+    void SyncAllTreeNameFields(string treeName)
+    {
+        // Update FileNameText at UICanvas>Background>FileButtonPanel>FileNameText (primary display)
+        SetCurrentTreeName(treeName);
+        
+        // Update FileName field (legacy/backup) - if it exists in inspector
+        if (FileName != null)
+        {
+            FileName.text = treeName;
         }
     }
 }
